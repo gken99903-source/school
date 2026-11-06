@@ -31,6 +31,7 @@ export async function checkoutTransaction(db,{orderId,items,paid,expectedTotal,u
   });
   const ingredientNeed=new Map();
   const lineIngredientUsage=new Map();
+  const addonTotals=new Map();
   for(let i=0;i<items.length;i++){
    const p=products[i],qty=items[i].qty,usage={};
    for(const part of p.recipe){
@@ -38,6 +39,22 @@ export async function checkoutTransaction(db,{orderId,items,paid,expectedTotal,u
     ingredientNeed.set(part.id,(ingredientNeed.get(part.id)||0)+n);
     usage[part.id]=n;
    }
+   let addonAmount=0;
+   const extras=items[i].addOns||[];
+   if(!Array.isArray(extras)||extras.length>12||((p.category!=='冰淇淋')&&extras.length))throw Error('加購選項不正確');
+   const optionIds=new Set();
+   for(const add of extras){
+    if(typeof add.id!=='string'||optionIds.has(add.id))throw Error('重複或不正確的加購口味');
+    optionIds.add(add.id);
+    const allowed=(p.addonOptions||[]).find(o=>o.id===add.id);
+    if(!allowed||!Number.isSafeInteger(allowed.price)||allowed.price<0)throw Error('加購口味已調整，請重新選擇');
+    const units=checkedInt(add.qty,'加購球數',1,1000);
+    addonAmount+=units*allowed.price;
+    ingredientNeed.set(add.id,(ingredientNeed.get(add.id)||0)+units);
+    usage[add.id]=(usage[add.id]||0)+units;
+   }
+   checkedInt(addonAmount,'加購金額');
+   addonTotals.set(p.id,addonAmount);
    lineIngredientUsage.set(p.id,usage);
   }
   if(ingredientNeed.size>12)throw Error('本次原料種類過多，請分筆結帳');
@@ -55,15 +72,16 @@ export async function checkoutTransaction(db,{orderId,items,paid,expectedTotal,u
   const currentPromos=promoSnaps.filter(x=>x.exists()).map(x=>({id:x.id,...x.data()}));
   const cost=priceOrder(items,products,currentPromos);
   if(!Number.isSafeInteger(cost.total)||cost.total<0||!Number.isSafeInteger(cost.subtotal))throw Error('金額計算異常');
-  if(cost.total!==expectedTotal)throw Error('商品售價或優惠已更新，請返回重新核對金額');
-  if(paid<cost.total)throw Error('實收金額不足');
+  const finalTotal=checkedInt(cost.total+[...addonTotals.values()].reduce((a,b)=>a+b,0),'訂單總額');
+  if(finalTotal!==expectedTotal)throw Error('商品售價或優惠已更新，請返回重新核對金額');
+  if(paid<finalTotal)throw Error('實收金額不足');
   const count=cost.lines.reduce((n,x)=>n+x.qty,0);
   const qtyMap={},usageMap={};
   for(const line of cost.lines)qtyMap[line.id]=line.qty;
   for(const [id,n] of ingredientNeed)usageMap[id]=n;
   const actor=String(actorName||'').slice(0,35);
   const applied=cost.applied.map(a=>({id:a.id,count:a.count,saved:a.saved}));
-  tx.set(orderRef,{soldByUid:user.uid,soldByName:actor,seat,createdAt:serverTimestamp(),productQty:qtyMap,ingredientUsage:usageMap,subtotal:cost.subtotal,discount:cost.discount,total:cost.total,paid,change:paid-cost.total,applied,count,status:'valid'});
+  tx.set(orderRef,{soldByUid:user.uid,soldByName:actor,seat,createdAt:serverTimestamp(),productQty:qtyMap,ingredientUsage:usageMap,subtotal:cost.subtotal,discount:cost.discount,addonTotal:finalTotal-cost.total,total:finalTotal,paid,change:paid-finalTotal,applied,count,status:'valid'});
   for(let i=0;i<items.length;i++){
    const p=products[i],line=cost.lines.find(x=>x.id===p.id);
    const saleId=orderId+'_'+p.id, saleRef=doc(db,'sales',saleId);
@@ -71,19 +89,53 @@ export async function checkoutTransaction(db,{orderId,items,paid,expectedTotal,u
    const sale={
     orderId,productId:p.id,productName:p.name,unit:p.unit||'個',
     qty:line.qty,unitPrice:p.price,grossPrice:line.gross,discountAmount:line.discount,
-    totalPrice:line.lineTotal,recipeSnapshot:p.recipe,usedIngredients:lineIngredientUsage.get(p.id),
+    totalPrice:line.lineTotal+addonTotals.get(p.id),addonTotal:addonTotals.get(p.id),addOns:items[i].addOns||[],recipeSnapshot:p.recipe,usedIngredients:lineIngredientUsage.get(p.id),
     promoId:'',promoCount:0,
     soldByUid:user.uid,soldByName:actor,seat,status:'valid',createdAt:serverTimestamp()
    };
    tx.set(saleRef,sale);
-   tx.update(productRefs[i],{sold:(p.sold||0)+line.qty,revenue:(p.revenue||0)+line.lineTotal,lastSaleId:saleId,updatedAt:serverTimestamp()});
+   tx.update(productRefs[i],{sold:(p.sold||0)+line.qty,revenue:(p.revenue||0)+line.lineTotal+addonTotals.get(p.id),lastSaleId:saleId,updatedAt:serverTimestamp()});
   }
   for(let i=0;i<ingredientIds.length;i++){
    const id=ingredientIds[i],old=ingredientSnaps[i].data();
    tx.update(ingredientRefs[i],{usedQty:(old.usedQty||0)+ingredientNeed.get(id),lastOrderId:orderId,updatedAt:serverTimestamp()});
   }
   const log=doc(collection(db,'audit'));
-  tx.set(log,{action:'checkout',summary:'售出 '+count+' 單位，應收 NT$'+cost.total,actorUid:user.uid,actorName:actor,seat,subjectId:orderId,subjectType:'order',createdAt:serverTimestamp()});
+  tx.set(log,{action:'checkout',summary:'售出 '+count+' 單位，應收 NT,actorUid:user.uid,actorName:actor,seat,subjectId:orderId,subjectType:'order',createdAt:serverTimestamp()});
+  return {total:finalTotal,change:paid-finalTotal,duplicate:false};
+ });
+}
+
+export async function refundTransaction(db,{saleId,reason,user,actorName,seat}){
+ if(!user||typeof saleId!=='string'||saleId.length>200)throw Error('退款資料不正確');
+ reason=String(reason||'').trim();
+ if(!reason||reason.length>150)throw Error('請輸入退款原因（最多 150 字）');
+ const saleRef=doc(db,'sales',saleId),logRef=doc(collection(db,'audit'));
+ return runTransaction(db,async tx=>{
+  const snap=await tx.get(saleRef);
+  if(!snap.exists())throw Error('找不到交易紀錄');
+  const sale=snap.data();
+  if(sale.status!=='valid')throw Error('此筆交易已退款，無法重複退款');
+  if(!validRecipe({recipe:sale.recipeSnapshot}))throw Error('舊交易缺少原料配方，請管理員手動核對');
+  const productRef=doc(db,'products',sale.productId),productSnap=await tx.get(productRef);
+  if(!productSnap.exists())throw Error('商品已移除，無法自動退款');
+  const ids=Object.keys(sale.usedIngredients||{}).sort();
+  const refs=ids.map(id=>doc(db,'ingredients',id));
+  const snaps=await Promise.all(refs.map(ref=>tx.get(ref)));
+  const p=productSnap.data(),amount=checkedInt(sale.totalPrice,'退款金額'),qty=checkedInt(sale.qty,'退回數量',1);
+  if((p.sold||0)<qty||(p.revenue||0)<amount)throw Error('商品帳目異常，請管理員核對');
+  for(let i=0;i<ids.length;i++){
+   const usage=checkedInt(sale.usedIngredients?.[ids[i]],'原料退回量',1);
+   if(!snaps[i].exists()||(snaps[i].data().usedQty||0)<usage)throw Error('原料帳目異常，無法自動退款');
+  }
+  tx.update(saleRef,{status:'voided',refundReason:reason,refundedByUid:user.uid,refundedByName:String(actorName||'').slice(0,35),refundedAt:serverTimestamp()});
+  tx.update(productRef,{sold:(p.sold||0)-qty,revenue:(p.revenue||0)-amount,lastRefundSaleId:saleId,updatedAt:serverTimestamp()});
+  for(let i=0;i<ids.length;i++)tx.update(refs[i],{usedQty:(snaps[i].data().usedQty||0)-sale.usedIngredients[ids[i]],lastRefundSaleId:saleId,updatedAt:serverTimestamp()});
+  tx.set(logRef,{action:'refund',summary:'退回 '+sale.productName+' × '+qty+'，NT$'+amount+'，原因：'+reason,actorUid:user.uid,actorName:String(actorName||'').slice(0,35),seat,subjectId:saleId,subjectType:'sale',createdAt:serverTimestamp()});
+  return {amount};
+ });
+}
++finalTotal,actorUid:user.uid,actorName:actor,seat,subjectId:orderId,subjectType:'order',createdAt:serverTimestamp()});
   return {total:cost.total,change:paid-cost.total,duplicate:false};
  });
 }
