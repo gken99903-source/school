@@ -54,6 +54,7 @@ export async function checkoutTransaction(db,{orderId,items,paid,expectedTotal,u
   const promoSnaps=await Promise.all(promoRefs.map(ref=>tx.get(ref)));
   const currentPromos=promoSnaps.filter(x=>x.exists()).map(x=>({id:x.id,...x.data()}));
   const cost=priceOrder(items,products,currentPromos);
+  if(!Number.isSafeInteger(cost.total)||cost.total<0||!Number.isSafeInteger(cost.subtotal))throw Error('金額計算異常');
   if(cost.total!==expectedTotal)throw Error('商品售價或優惠已更新，請返回重新核對金額');
   if(paid<cost.total)throw Error('實收金額不足');
   const count=cost.lines.reduce((n,x)=>n+x.qty,0);
@@ -61,18 +62,17 @@ export async function checkoutTransaction(db,{orderId,items,paid,expectedTotal,u
   for(const line of cost.lines)qtyMap[line.id]=line.qty;
   for(const [id,n] of ingredientNeed)usageMap[id]=n;
   const actor=String(actorName||'').slice(0,35);
-  const applied=cost.applied.map(a=>({id:a.id,productA:a.productA,productB:a.productB,count:a.count,saved:a.saved}));
+  const applied=cost.applied.map(a=>({id:a.id,count:a.count,saved:a.saved}));
   tx.set(orderRef,{soldByUid:user.uid,soldByName:actor,seat,createdAt:serverTimestamp(),productQty:qtyMap,ingredientUsage:usageMap,subtotal:cost.subtotal,discount:cost.discount,total:cost.total,paid,change:paid-cost.total,applied,count,status:'valid'});
   for(let i=0;i<items.length;i++){
    const p=products[i],line=cost.lines.find(x=>x.id===p.id);
    const saleId=orderId+'_'+p.id, saleRef=doc(db,'sales',saleId);
-   const related=applied.filter(a=>a.productB===p.id);
+   const related=[];
    const sale={
     orderId,productId:p.id,productName:p.name,unit:p.unit||'個',
     qty:line.qty,unitPrice:p.price,grossPrice:line.gross,discountAmount:line.discount,
     totalPrice:line.lineTotal,recipeSnapshot:p.recipe,usedIngredients:lineIngredientUsage.get(p.id),
-    promoId:related.length===1?related[0].id:'',
-    promoCount:related.length===1?related[0].count:0,
+    promoId:'',promoCount:0,
     soldByUid:user.uid,soldByName:actor,seat,status:'valid',createdAt:serverTimestamp()
    };
    tx.set(saleRef,sale);
