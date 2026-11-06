@@ -74,7 +74,15 @@ service cloud.firestore {
         && request.resource.data.recipe.size() <= 12
         && request.resource.data.addonOptions is list
         && request.resource.data.addonOptions.size() <= 12;
-      allow update: if (manager()
+      allow update: if (superAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'sold','revenue','lastResetBy','lastResetAt'
+          ])
+          && request.resource.data.sold == 0
+          && request.resource.data.revenue == 0
+          && request.resource.data.lastResetBy == request.auth.uid
+          && request.resource.data.lastResetAt == request.time)
+        || (manager()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
              'name','category','unit','price','recipe','addonOptions','hidden','updatedAt'
           ])
@@ -117,7 +125,14 @@ service cloud.firestore {
         && request.resource.data.unitCost >= 0
         && request.resource.data.unitCost <= 10000000
         && request.resource.data.usedQty == 0;
-      allow update: if (manager()
+      allow update: if (superAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'usedQty','lastResetBy','lastResetAt'
+          ])
+          && request.resource.data.usedQty == 0
+          && request.resource.data.lastResetBy == request.auth.uid
+          && request.resource.data.lastResetAt == request.time)
+        || (manager()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'name','unit','totalQty','unitCost','updatedAt'
           ])
@@ -143,7 +158,12 @@ service cloud.firestore {
           && request.resource.data.usedQty < resource.data.usedQty
           && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId))
           && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.refundedByUid == request.auth.uid
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.needs[id] == resource.data.usedQty - request.resource.data.usedQty);
+          && (
+            (('needs' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)
+              && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.needs[id] == resource.data.usedQty - request.resource.data.usedQty)
+            || (('usedIngredients' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)
+              && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.usedIngredients[id] == resource.data.usedQty - request.resource.data.usedQty)
+          ));
       allow delete: if false;
     }
     match /sales/{id} {
@@ -163,7 +183,19 @@ service cloud.firestore {
         && request.resource.data.paid is int
         && request.resource.data.paid >= request.resource.data.total
         && request.resource.data.change == request.resource.data.paid - request.resource.data.total;
-      allow update: if (member()
+      allow update: if (superAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status','refundReason','refundedByUid','refundedAt',
+            'hidden','hiddenBy','hiddenAt'
+          ])
+          && request.resource.data.status == 'voided'
+          && request.resource.data.refundReason == '26 號清空測試資料'
+          && request.resource.data.refundedByUid == request.auth.uid
+          && request.resource.data.refundedAt == request.time
+          && request.resource.data.hidden == true
+          && request.resource.data.hiddenBy == request.auth.uid
+          && request.resource.data.hiddenAt == request.time)
+        || (member()
           && resource.data.status == 'valid'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'status','refundReason','refundedByUid','refundedAt'
