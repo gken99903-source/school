@@ -1,251 +1,203 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
-    }
+    function loggedIn() { return request.auth != null; }
     function superAdmin() {
-      return signedIn()
-        && request.auth.token.email == 'seat-26@school-22aa0.firebaseapp.com';
+      return loggedIn() && request.auth.token.email == 'seat-26@school-22aa0.firebaseapp.com';
     }
     function accountPath() {
       return /databases/$(database)/documents/accounts/$(request.auth.uid);
     }
     function activeAccount() {
-      return signedIn()
-        && exists(accountPath())
+      return loggedIn() && exists(accountPath())
         && get(accountPath()).data.email == request.auth.token.email
-        && get(accountPath()).data.role in ['student', 'teacher', 'admin'];
+        && get(accountPath()).data.role in ['student','teacher','admin'];
     }
-    function member() {
-      return superAdmin() || activeAccount();
-    }
+    function member() { return superAdmin() || activeAccount(); }
     function manager() {
-      return superAdmin() || (activeAccount()
-        && get(accountPath()).data.role in ['teacher', 'admin']);
+      return superAdmin() || (activeAccount() && get(accountPath()).data.role in ['admin','teacher']);
+    }
+    function auditCheck() {
+      return member()
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.createdAt == request.time;
     }
     match /accounts/{uid} {
-      allow get: if superAdmin() || (signedIn() && request.auth.uid == uid);
-      allow list: if superAdmin();
+      allow read: if superAdmin() || (loggedIn() && request.auth.uid == uid);
       allow create: if superAdmin()
         && uid != request.auth.uid
-        && request.resource.data.keys().hasOnly([
-          'seat','role','name','email','createdBy','createdAt'
-        ])
-        && request.resource.data.role in ['student','teacher','admin']
+        && request.resource.data.role in ['admin','teacher','student']
         && request.resource.data.seat is int
-        && request.resource.data.seat >= 0
-        && request.resource.data.seat <= 99
+        && request.resource.data.seat >= 0 && request.resource.data.seat <= 99
         && request.resource.data.seat != 26
         && request.resource.data.name is string
-        && request.resource.data.name.size() <= 20
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.createdAt == request.time
+        && request.resource.data.name.size() <= 30
         && request.resource.data.email is string
-        && request.resource.data.email ==
-          'seat-' + (request.resource.data.seat == 0
-            ? '00'
-            : string(request.resource.data.seat)) +
-          '@school-22aa0.firebaseapp.com';
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time;
       allow update: if superAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'role','updatedAt','updatedBy'
-        ])
-        && request.resource.data.role in ['student','teacher','admin']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role','updatedBy','updatedAt'])
+        && request.resource.data.role in ['admin','teacher','student']
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.updatedAt == request.time;
       allow delete: if false;
     }
-    match /profiles/{uid} {
-      allow get: if superAdmin() || (signedIn() && request.auth.uid == uid);
-      allow list: if superAdmin();
-      allow create: if activeAccount() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['seat','name','createdAt'])
-        && request.resource.data.seat == get(accountPath()).data.seat
-        && request.resource.data.name is string
-        && request.resource.data.name.size() >= 1
-        && request.resource.data.name.size() <= 20
-        && request.resource.data.createdAt == request.time;
-      allow update, delete: if false;
+    match /meta/{id} {
+      allow read: if member();
+      allow create, update: if manager() && id == 'settings'
+        && request.resource.data.sharedCost is int
+        && request.resource.data.sharedCost >= 0
+        && request.resource.data.stallName is string
+        && request.resource.data.stallName.size() <= 45;
+      allow delete: if false;
     }
-    match /ingredients/{ingredientId} {
+    match /promotions/{id} {
       allow read: if member();
       allow create: if manager()
-        && request.resource.data.keys().hasOnly([
-          'name','unit','totalQty','unitCost','usedQty','createdAt','updatedAt','lastAuditId'
-        ])
+        && request.resource.data.productA is string
+        && request.resource.data.productB is string
+        && request.resource.data.productA != request.resource.data.productB
+        && request.resource.data.price is int
+        && request.resource.data.price >= 0
+        && request.resource.data.price <= 10000000;
+      allow update, delete: if false;
+    }
+    match /products/{id} {
+      allow read: if member();
+      allow create: if manager()
+        && request.resource.data.sold == 0
+        && request.resource.data.revenue == 0
+        && request.resource.data.price is int
+        && request.resource.data.price > 0
+        && request.resource.data.recipe is list
+        && request.resource.data.recipe.size() > 0
+        && request.resource.data.recipe.size() <= 12
+        && request.resource.data.addonOptions is list
+        && request.resource.data.addonOptions.size() <= 12;
+      allow update: if (manager()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'name','category','unit','price','recipe','addonOptions','hidden','updatedAt'
+          ])
+          && request.resource.data.price is int
+          && request.resource.data.price > 0
+          && request.resource.data.category in ['飯捲','冰淇淋'])
+        || (member()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'sold','revenue','lastOrderId','updatedAt'
+          ])
+          && request.resource.data.sold is int
+          && request.resource.data.sold > resource.data.sold
+          && request.resource.data.revenue is int
+          && request.resource.data.revenue >= resource.data.revenue
+          && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId))
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.status == 'valid')
+        || (member()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'sold','revenue','lastRefundId','updatedAt'
+          ])
+          && request.resource.data.sold is int && request.resource.data.sold >= 0
+          && request.resource.data.sold < resource.data.sold
+          && request.resource.data.revenue is int && request.resource.data.revenue >= 0
+          && request.resource.data.revenue <= resource.data.revenue
+          && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId))
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.status == 'voided'
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.refundedByUid == request.auth.uid);
+      allow delete: if false;
+    }
+    match /ingredients/{id} {
+      allow read: if member();
+      allow create: if manager()
         && request.resource.data.name is string
-        && request.resource.data.name.size() > 0
-        && request.resource.data.name.size() <= 60
         && request.resource.data.unit is string
-        && request.resource.data.unit.size() > 0
-        && request.resource.data.unit.size() <= 12
         && request.resource.data.totalQty is int
         && request.resource.data.totalQty >= 0
         && request.resource.data.totalQty <= 10000000
         && request.resource.data.unitCost is int
         && request.resource.data.unitCost >= 0
         && request.resource.data.unitCost <= 10000000
-        && request.resource.data.usedQty == 0
-        && request.resource.data.createdAt == request.time;
+        && request.resource.data.usedQty == 0;
       allow update: if (manager()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'name','unit','totalQty','unitCost','updatedAt','lastAuditId'
-        ])
-        && request.resource.data.name is string
-        && request.resource.data.name.size() > 0
-        && request.resource.data.name.size() <= 60
-        && request.resource.data.unit is string
-        && request.resource.data.unit.size() > 0
-        && request.resource.data.unit.size() <= 12
-        && request.resource.data.totalQty is int
-        && request.resource.data.totalQty >= resource.data.usedQty
-        && request.resource.data.totalQty <= 10000000
-        && request.resource.data.unitCost is int
-        && request.resource.data.unitCost >= 0
-        && request.resource.data.unitCost <= 10000000)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'name','unit','totalQty','unitCost','updatedAt'
+          ])
+          && request.resource.data.totalQty is int
+          && request.resource.data.totalQty >= resource.data.usedQty
+          && request.resource.data.totalQty <= 10000000)
         || (member()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'usedQty','lastOrderId','updatedAt'
           ])
           && request.resource.data.usedQty is int
-          && request.resource.data.usedQty <= resource.data.totalQty
           && request.resource.data.usedQty > resource.data.usedQty
-          && request.resource.data.lastOrderId is string
-          && existsAfter(/databases/$(database)/documents/orders/$(request.resource.data.lastOrderId))
-          && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.lastOrderId)).data.soldByUid == request.auth.uid
-          && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.lastOrderId)).data.ingredientUsage[ingredientId] == request.resource.data.usedQty - resource.data.usedQty
-        )
+          && request.resource.data.usedQty <= resource.data.totalQty
+          && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId))
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.needs[id] == request.resource.data.usedQty - resource.data.usedQty)
         || (member()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'usedQty','lastRefundSaleId','updatedAt'
+            'usedQty','lastRefundId','updatedAt'
           ])
           && request.resource.data.usedQty is int
           && request.resource.data.usedQty >= 0
           && request.resource.data.usedQty < resource.data.usedQty
-          && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundSaleId))
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundSaleId)).data.status == 'voided'
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundSaleId)).data.refundedByUid == request.auth.uid
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundSaleId)).data.usedIngredients[ingredientId] == resource.data.usedQty - request.resource.data.usedQty
-        );
+          && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId))
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.refundedByUid == request.auth.uid
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.needs[id] == resource.data.usedQty - request.resource.data.usedQty);
       allow delete: if false;
     }
-    match /products/{productId} {
-      allow read: if member();
-      allow create: if manager()
-        && request.resource.data.sold == 0
-        && request.resource.data.revenue == 0
-        && request.resource.data.recipe is list
-        && request.resource.data.recipe.size() > 0
-        && request.resource.data.recipe.size() <= 12;
-      allow update: if (manager()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'name','category','unit','price','unitCost','totalQty','extraCost',
-            'recipe','hidden','lastAuditId','updatedAt'
-          ])
-        )
-        || (member()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'sold','revenue','lastSaleId','updatedAt'
-          ])
-          && request.resource.data.sold is int
-          && request.resource.data.sold > resource.data.sold
-          && request.resource.data.revenue is int
-          && request.resource.data.revenue >= resource.data.revenue
-          && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastSaleId))
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastSaleId)).data.productId == productId
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastSaleId)).data.status == 'valid'
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastSaleId)).data.soldByUid == request.auth.uid
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastSaleId)).data.qty == request.resource.data.sold - resource.data.sold
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastSaleId)).data.totalPrice == request.resource.data.revenue - resource.data.revenue
-        )
-        || (member()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'sold','revenue','lastRefundSaleId','updatedAt'
-          ])
-          && request.resource.data.sold is int
-          && request.resource.data.sold >= 0
-          && request.resource.data.sold < resource.data.sold
-          && request.resource.data.revenue is int
-          && request.resource.data.revenue >= 0
-          && request.resource.data.revenue <= resource.data.revenue
-          && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundSaleId))
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundSaleId)).data.productId == productId
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundSaleId)).data.status == 'voided'
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundSaleId)).data.refundedByUid == request.auth.uid
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundSaleId)).data.qty == resource.data.sold - request.resource.data.sold
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundSaleId)).data.totalPrice == resource.data.revenue - request.resource.data.revenue
-        );
-      allow delete: if false;
-    }
-    match /promotions/{promotionId} {
-      allow read: if member();
-      allow create, update: if manager();
-      allow delete: if false;
-    }
-    match /meta/{docId} {
-      allow read: if member();
-      allow create, update: if manager() && docId == 'settings';
-      allow delete: if false;
-    }
-    match /orders/{orderId} {
+    match /sales/{id} {
       allow read: if member();
       allow create: if member()
-        && request.resource.data.soldByUid == request.auth.uid
+        && request.resource.data.actorUid == request.auth.uid
         && request.resource.data.status == 'valid'
         && request.resource.data.createdAt == request.time
+        && request.resource.data.hidden == false
+        && request.resource.data.lines is list
+        && request.resource.data.lines.size() > 0
+        && request.resource.data.lines.size() <= 4
+        && request.resource.data.needs is map
         && request.resource.data.total is int
         && request.resource.data.total >= 0
         && request.resource.data.total <= 10000000
         && request.resource.data.paid is int
         && request.resource.data.paid >= request.resource.data.total
-        && request.resource.data.change == request.resource.data.paid - request.resource.data.total
-        && request.resource.data.ingredientUsage is map
-        && request.resource.data.productQty is map;
-      allow update, delete: if false;
-    }
-    match /sales/{saleId} {
-      allow read: if member();
-      allow create: if member()
-        && request.resource.data.soldByUid == request.auth.uid
-        && request.resource.data.status == 'valid'
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.productId is string
-        && request.resource.data.orderId is string
-        && saleId == request.resource.data.orderId + '_' + request.resource.data.productId
-        && existsAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId))
-        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.soldByUid == request.auth.uid
-        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.productQty[request.resource.data.productId] == request.resource.data.qty
-        && request.resource.data.qty is int
-        && request.resource.data.qty > 0
-        && request.resource.data.unitPrice is int
-        && request.resource.data.unitPrice > 0
-        && request.resource.data.grossPrice == request.resource.data.qty * request.resource.data.unitPrice
-        && request.resource.data.totalPrice == request.resource.data.grossPrice - request.resource.data.discountAmount
-        && request.resource.data.totalPrice >= 0
-        && request.resource.data.discountAmount >= 0;
-      allow update: if member()
-        && resource.data.status == 'valid'
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status','refundReason','refundedByUid','refundedByName','refundedAt'
-        ])
-        && request.resource.data.status == 'voided'
-        && request.resource.data.refundedByUid == request.auth.uid
-        && request.resource.data.refundedAt == request.time
-        && request.resource.data.refundReason is string
-        && request.resource.data.refundReason.size() > 0
-        && request.resource.data.refundReason.size() <= 150;
+        && request.resource.data.change == request.resource.data.paid - request.resource.data.total;
+      allow update: if (member()
+          && resource.data.status == 'valid'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status','refundReason','refundedByUid','refundedAt'
+          ])
+          && request.resource.data.status == 'voided'
+          && request.resource.data.refundedByUid == request.auth.uid
+          && request.resource.data.refundedAt == request.time
+          && request.resource.data.refundReason is string
+          && request.resource.data.refundReason.size() > 0
+          && request.resource.data.refundReason.size() <= 150)
+        || (superAdmin()
+          && resource.data.status == 'voided'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'hidden','hiddenBy','hiddenAt'
+          ])
+          && request.resource.data.hidden == true
+          && request.resource.data.hiddenBy == request.auth.uid
+          && request.resource.data.hiddenAt == request.time);
       allow delete: if false;
     }
-    match /audit/{auditId} {
+    match /audit/{id} {
       allow read: if manager();
-      allow create: if member()
-        && request.resource.data.actorUid == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.action is string
+      allow create: if auditCheck()
+        && request.resource.data.hidden == false
         && request.resource.data.summary is string
         && request.resource.data.summary.size() <= 300;
-      allow update, delete: if false;
+      allow update: if superAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'hidden','hiddenBy','hiddenAt'
+        ])
+        && request.resource.data.hidden == true
+        && request.resource.data.hiddenBy == request.auth.uid
+        && request.resource.data.hiddenAt == request.time;
+      allow delete: if false;
     }
   }
 }
