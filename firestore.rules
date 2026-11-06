@@ -1,0 +1,101 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function superAdmin() {
+      return signedIn()
+        && request.auth.token.email == 'seat-26@school-22aa0.firebaseapp.com';
+    }
+    function accountPath() {
+      return /databases/$(database)/documents/accounts/$(request.auth.uid);
+    }
+    function activeAccount() {
+      return signedIn()
+        && exists(accountPath())
+        && get(accountPath()).data.email == request.auth.token.email
+        && get(accountPath()).data.role in ['student', 'teacher', 'admin'];
+    }
+    function member() {
+      return superAdmin() || activeAccount();
+    }
+    function manager() {
+      return superAdmin() || (activeAccount()
+        && get(accountPath()).data.role in ['teacher', 'admin']);
+    }
+    match /accounts/{uid} {
+      allow get: if superAdmin() || (signedIn() && request.auth.uid == uid);
+      allow list: if superAdmin();
+      allow create: if superAdmin()
+        && uid != request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'seat','role','name','email','createdBy','createdAt'
+        ])
+        && request.resource.data.role in ['student','teacher','admin']
+        && request.resource.data.seat is int
+        && request.resource.data.seat >= 0
+        && request.resource.data.seat <= 99
+        && request.resource.data.seat != 26
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 20
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.email is string
+        && request.resource.data.email ==
+          'seat-' + (request.resource.data.seat == 0
+            ? '00'
+            : string(request.resource.data.seat)) +
+          '@school-22aa0.firebaseapp.com';
+      allow update: if superAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'role','updatedAt','updatedBy'
+        ])
+        && request.resource.data.role in ['student','teacher','admin']
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+    match /profiles/{uid} {
+      allow get: if superAdmin() || (signedIn() && request.auth.uid == uid);
+      allow list: if superAdmin();
+      allow create: if activeAccount() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['seat','name','createdAt'])
+        && request.resource.data.seat == get(accountPath()).data.seat
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 20
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+    match /products/{productId} {
+      allow read: if member();
+      allow create, update: if manager();
+      allow delete: if false;
+    }
+    match /promotions/{promotionId} {
+      allow read: if member();
+      allow create, update: if manager();
+      allow delete: if false;
+    }
+    match /meta/{docId} {
+      allow read: if member();
+      allow create, update: if manager() && docId == 'settings';
+      allow delete: if false;
+    }
+    match /sales/{saleId} {
+      allow read: if member();
+      allow write: if false;
+    }
+    match /audit/{auditId} {
+      allow read: if manager();
+      allow create: if member()
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.action is string
+        && request.resource.data.summary is string
+        && request.resource.data.summary.size() <= 300;
+      allow update, delete: if false;
+    }
+  }
+}
