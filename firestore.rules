@@ -129,7 +129,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'usedQty','lastResetBy','lastResetAt'
           ])
-          && request.resource.data.usedQty == 0
+          && request.resource.data.usedQty == (('damagedQty' in resource.data) ? resource.data.damagedQty : 0)
           && request.resource.data.lastResetBy == request.auth.uid
           && request.resource.data.lastResetAt == request.time)
         || (manager()
@@ -139,6 +139,22 @@ service cloud.firestore {
           && request.resource.data.totalQty is int
           && request.resource.data.totalQty >= resource.data.usedQty
           && request.resource.data.totalQty <= 10000000)
+        || (member()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'usedQty','damagedQty','lastDamageId','updatedAt'
+          ])
+          && request.resource.data.usedQty is int
+          && request.resource.data.damagedQty is int
+          && request.resource.data.usedQty > resource.data.usedQty
+          && request.resource.data.usedQty <= resource.data.totalQty
+          && request.resource.data.damagedQty == (('damagedQty' in resource.data) ? resource.data.damagedQty : 0)
+             + request.resource.data.usedQty - resource.data.usedQty
+          && request.resource.data.lastDamageId is string
+          && existsAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId))
+          && getAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId)).data.ingredientId == id
+          && getAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId)).data.actorUid == request.auth.uid
+          && getAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId)).data.qty == request.resource.data.usedQty - resource.data.usedQty
+        )
         || (member()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'usedQty','lastOrderId','updatedAt'
@@ -165,6 +181,34 @@ service cloud.firestore {
               && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.usedIngredients[id] == resource.data.usedQty - request.resource.data.usedQty)
           ));
       allow delete: if false;
+    }
+    match /damage/{id} {
+      allow read: if member();
+      allow create: if member()
+        && request.resource.data.keys().hasOnly([
+          'ingredientId','ingredientName','unit','qty','reason','unitCost','cost',
+          'actorUid','actorName','seat','createdAt'
+        ])
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.ingredientId is string
+        && request.resource.data.ingredientName is string
+        && request.resource.data.unit is string
+        && request.resource.data.qty is int
+        && request.resource.data.qty >= 1
+        && request.resource.data.qty <= 10000000
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() >= 1
+        && request.resource.data.reason.size() <= 150
+        && request.resource.data.unitCost is int
+        && request.resource.data.cost == request.resource.data.qty * request.resource.data.unitCost
+        && exists(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId))
+        && request.resource.data.unitCost == get(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId)).data.unitCost
+        && request.resource.data.ingredientName == get(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId)).data.name
+        && request.resource.data.unit == get(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId)).data.unit
+        && getAfter(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId)).data.lastDamageId == id
+        && getAfter(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId)).data.usedQty == get(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId)).data.usedQty + request.resource.data.qty;
+      allow update, delete: if false;
     }
     match /sales/{id} {
       allow read: if member();
