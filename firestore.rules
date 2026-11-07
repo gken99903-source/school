@@ -161,6 +161,35 @@ service cloud.firestore {
            || !('productDeltas' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)));
       allow delete: if false;
     }
+    match /rollIngredients/{id} {
+      allow read: if member();
+      allow create: if manager()
+        && request.resource.data.keys().hasOnly(['name','unit','defaultPrice','unitCost','hidden','createdAt','updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
+        && request.resource.data.unit is string
+        && request.resource.data.unit.size() > 0 && request.resource.data.unit.size() <= 12
+        && request.resource.data.defaultPrice is int
+        && request.resource.data.defaultPrice >= 0 && request.resource.data.defaultPrice <= 10000000
+        && request.resource.data.unitCost is int
+        && request.resource.data.unitCost >= 0 && request.resource.data.unitCost <= 10000000
+        && request.resource.data.hidden is bool
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if manager()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','unit','defaultPrice','unitCost','hidden','updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
+        && request.resource.data.unit is string
+        && request.resource.data.unit.size() > 0 && request.resource.data.unit.size() <= 12
+        && request.resource.data.defaultPrice is int
+        && request.resource.data.defaultPrice >= 0 && request.resource.data.defaultPrice <= 10000000
+        && request.resource.data.unitCost is int
+        && request.resource.data.unitCost >= 0 && request.resource.data.unitCost <= 10000000
+        && request.resource.data.hidden is bool
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
     match /ingredients/{id} {
       allow read: if member();
       allow create: if manager()
