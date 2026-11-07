@@ -68,12 +68,22 @@ service cloud.firestore {
         && request.resource.data.sold == 0
         && request.resource.data.revenue == 0
         && request.resource.data.price is int
-        && request.resource.data.price > 0
+        && request.resource.data.price >= 1
+        && request.resource.data.price <= 10000000
+        && request.resource.data.manualStock == 0
+        && request.resource.data.unitCost is int
+        && request.resource.data.unitCost >= 0
+        && request.resource.data.unitCost <= 10000000
         && request.resource.data.recipe is list
-        && request.resource.data.recipe.size() > 0
-        && request.resource.data.recipe.size() <= 12
         && request.resource.data.addonOptions is list
-        && request.resource.data.addonOptions.size() <= 12;
+        && request.resource.data.rollAddonOptions is list
+        && request.resource.data.addonOptions.size() <= 12
+        && request.resource.data.rollAddonOptions.size() <= 12
+        && ((request.resource.data.category == '飯捲' && request.resource.data.recipe.size() == 0)
+         || (request.resource.data.category == '冰淇淋'
+           && request.resource.data.recipe.size() > 0
+           && request.resource.data.recipe.size() <= 12
+           && request.resource.data.rollAddonOptions.size() == 0));
       allow update: if (superAdmin()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'sold','revenue','lastResetBy','lastResetAt'
@@ -84,33 +94,71 @@ service cloud.firestore {
           && request.resource.data.lastResetAt == request.time)
         || (manager()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-             'name','category','unit','price','recipe','addonOptions','hidden','updatedAt'
+             'name','category','unit','price','unitCost','recipe','addonOptions','rollAddonOptions','hidden','updatedAt'
           ])
           && request.resource.data.price is int
           && request.resource.data.price > 0
-          && request.resource.data.category in ['飯捲','冰淇淋'])
+          && request.resource.data.category in ['飯捲','冰淇淋']
+          && request.resource.data.unitCost is int
+          && request.resource.data.unitCost >= 0
+          && request.resource.data.recipe is list
+          && request.resource.data.rollAddonOptions is list
+          && ((request.resource.data.category == '飯捲' && request.resource.data.recipe.size() == 0)
+           || (request.resource.data.category == '冰淇淋' && request.resource.data.recipe.size() > 0)))
+        || (member()
+          && resource.data.category in ['飯捲','飯卷','飯糰']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'manualStock','lastStockAuditId','updatedAt'
+          ])
+          && request.resource.data.manualStock is int
+          && request.resource.data.manualStock >= 0
+          && request.resource.data.manualStock <= 10000000
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.lastStockAuditId is string
+          && getAfter(/databases/$(database)/documents/audit/$(request.resource.data.lastStockAuditId)).data.action == 'roll.stock.adjust'
+          && getAfter(/databases/$(database)/documents/audit/$(request.resource.data.lastStockAuditId)).data.subjectId == id
+          && getAfter(/databases/$(database)/documents/audit/$(request.resource.data.lastStockAuditId)).data.actorUid == request.auth.uid
+          && getAfter(/databases/$(database)/documents/audit/$(request.resource.data.lastStockAuditId)).data.oldStock == resource.data.get('manualStock',0)
+          && getAfter(/databases/$(database)/documents/audit/$(request.resource.data.lastStockAuditId)).data.newStock == request.resource.data.manualStock)
         || (member()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'sold','revenue','lastOrderId','updatedAt'
+            'sold','revenue','manualStock','lastOrderId','updatedAt'
           ])
+          && request.resource.data.updatedAt == request.time
           && request.resource.data.sold is int
           && request.resource.data.sold > resource.data.sold
           && request.resource.data.revenue is int
           && request.resource.data.revenue >= resource.data.revenue
-          && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId))
           && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.status == 'valid')
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.status == 'valid'
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].sold == request.resource.data.sold - resource.data.sold
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].revenue == request.resource.data.revenue - resource.data.revenue
+          && ((resource.data.category in ['飯捲','飯卷','飯糰']
+            && request.resource.data.manualStock is int
+            && request.resource.data.manualStock >= 0
+            && resource.data.get('manualStock',0) - request.resource.data.manualStock == getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].rollQty)
+           || (resource.data.category == '冰淇淋'
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['manualStock']))))
         || (member()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-             'sold','revenue','lastRefundId','updatedAt'
+             'sold','revenue','manualStock','lastRefundId','updatedAt'
           ])
-          && request.resource.data.sold is int && request.resource.data.sold >= 0
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.sold is int
+          && request.resource.data.sold >= 0
           && request.resource.data.sold < resource.data.sold
-          && request.resource.data.revenue is int && request.resource.data.revenue >= 0
+          && request.resource.data.revenue is int
+          && request.resource.data.revenue >= 0
           && request.resource.data.revenue <= resource.data.revenue
-          && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId))
           && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.status == 'voided'
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.refundedByUid == request.auth.uid);
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.refundedByUid == request.auth.uid
+          && ((('productDeltas' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)
+            && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].sold == resource.data.sold - request.resource.data.sold
+            && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].revenue == resource.data.revenue - request.resource.data.revenue
+            && ((resource.data.category in ['飯捲','飯卷','飯糰']
+              && request.resource.data.get('manualStock',0) - resource.data.get('manualStock',0) == getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].rollQty)
+             || !(resource.data.category in ['飯捲','飯卷','飯糰'])))
+           || !('productDeltas' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)));
       allow delete: if false;
     }
     match /ingredients/{id} {
@@ -221,9 +269,23 @@ service cloud.firestore {
         && request.resource.data.lines.size() > 0
         && request.resource.data.lines.size() <= 4
         && request.resource.data.needs is map
+        && request.resource.data.rollNeeds is map
+        && request.resource.data.productDeltas is map
+        && request.resource.data.manualDiscount is int
+        && request.resource.data.baseTotal is int
+        && request.resource.data.baseTotal >= 0
+        && request.resource.data.manualDiscount >= 0
+        && request.resource.data.manualDiscount <= request.resource.data.baseTotal
+        && request.resource.data.manualReason is string
+        && (request.resource.data.manualDiscount == 0
+            || (request.resource.data.manualReason.size() >= 1
+                && request.resource.data.manualReason.size() <= 150))
         && request.resource.data.total is int
+        && request.resource.data.total == request.resource.data.baseTotal - request.resource.data.manualDiscount
         && request.resource.data.total >= 0
         && request.resource.data.total <= 10000000
+        && request.resource.data.fingerprint is string
+        && request.resource.data.fingerprint.size() <= 12000
         && request.resource.data.paid is int
         && request.resource.data.paid >= request.resource.data.total
         && request.resource.data.change == request.resource.data.paid - request.resource.data.total;
