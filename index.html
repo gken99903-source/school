@@ -46,8 +46,14 @@ body.dark .cart-inner strong{color:#8edfe5}
 #iceFlavors .addon-row{grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:13px 0;margin:0;border-bottom:1px solid var(--border)}
 #iceFlavors .addon-row:last-child{border-bottom:0}
 #iceFlavors .ice-ball{width:77px;text-align:center;min-width:0}
-#iceFlavors .ice-step{padding:7px 11px;min-height:41px;min-width:38px;border:1px solid var(--border);border-radius:10px;background:var(--field);color:var(--ink);font-size:20px}
+#iceFlavors .ice-step{padding:7px 11px;min-height:41px;min-width:38px;border:1px solid var(--border);border-radius:10px;background:var(--field);color:var(--ink);font-size:20px;touch-action:manipulation;user-select:none;-webkit-user-select:none}
 #iceFlavors .ice-controls{display:flex;align-items:center;gap:5px}
+.base-qty-controls{display:flex;gap:9px;align-items:center;width:min(270px,100%)}
+.base-qty-controls #iceQty{width:100px;min-width:0;text-align:center;flex:1;font-size:18px}
+.base-qty-controls button{min-width:48px;min-height:48px;border:1px solid var(--border);border-radius:12px;color:var(--ink);background:var(--field);font-size:24px;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+#iceTitle:focus{outline:none}
+#iceDialog .modal-actions{position:relative;z-index:1}
+
 #iceFlavors .ice-ball-label{font-size:12px;white-space:nowrap;color:var(--sub)}
 .ice-summary{margin-top:15px;padding:12px 14px;border-radius:13px;background:var(--surface);display:flex;align-items:center;justify-content:space-between;gap:12px}
 #iceTotal{font-size:27px;color:var(--accent)}
@@ -262,8 +268,8 @@ body.dark .checkout-category-head h4{color:#e8f3fb}
 <div class="note" id="damageEstimate">請選擇原料及數量</div>
 </div><div class="modal-actions"><button type="button" class="secondary" data-close="damageDialog">取消</button><button type="submit" class="danger" id="submitDamage">確認報廢並扣除庫存</button></div></form></dialog>
 <dialog id="ingredientDialog"><div class="modal-head"><h3 id="ingredientTitle">新增原料</h3></div><form id="ingredientForm"><div class="modal-body"><div class="field"><label>原料名稱</label><input id="ingredientName" maxlength="60" required></div><div class="grid"><div class="field"><label>單位</label><input id="ingredientUnit" maxlength="12" value="個" required></div><div class="field"><label>進貨總量</label><input id="ingredientTotal" type="number" min="0" step="1" required></div><div class="field"><label>每單位成本（元）</label><input id="ingredientCost" type="number" min="0" step="1" required></div></div></div><div class="modal-actions"><button type="button" class="secondary" data-close="ingredientDialog">取消</button><button class="primary">儲存庫存</button></div></form></dialog>
-<dialog id="productDialog"><div class="modal-head"><h3 id="productTitle">新增商品</h3></div><form id="productForm"><div class="modal-body"><div class="field"><label>商品類型</label><select id="productType"><option value="飯捲">飯捲</option><option value="冰淇淋">冰淇淋</option></select></div><div class="grid"><div class="field"><label>名稱</label><input id="productName" maxlength="60" required></div><div class="field"><label>一份售價（元）</label><input id="productPrice" type="number" min="1" step="1" required></div><div class="field"><label>計價單位</label><input id="productUnit" maxlength="12" value="份" required></div></div><div class="field" id="iceRecipeFields"><label>每份冰淇淋所需原料</label><div id="recipeRows"></div><button id="addRecipe" class="secondary" type="button">＋ 加入原料</button></div><div id="rollProductFields" class="field hidden"><label>飯卷每份成本（元）</label><input id="rollUnitCost" type="number" min="0" max="10000000" inputmode="numeric" step="1"><p class="muted">建立後，在「庫存檢視」填寫該口味目前剩餘支數；不使用原料自動推算。</p></div><div id="iceOptions" class="field hidden"><label>冰淇淋加購口味與一球價格</label><div id="addonOptionRows"></div><button id="addAddonOption" type="button" class="secondary">＋ 新增口味單球售價</button></div><div id="rollOptions" class="field hidden"><label>飯捲加購原料與每份加購價</label><div id="rollAddonRows"></div><button type="button" id="addRollAddon" class="secondary">＋ 新增加購原料</button><p class="muted">請先在「飯捲加購原料」建立原料，之後可以選擇加購項目與價格。飯捲剩餘支數仍由「庫存檢視」人工設定。</p></div><label style="display:flex;gap:8px;align-items:center"><input id="productHidden" type="checkbox" style="width:18px;min-height:18px"> 下架商品</label></div><div class="modal-actions"><button type="button" class="secondary" data-close="productDialog">取消</button><button class="primary">儲存商品</button></div></form></dialog>
-<dialog id="rollMaterialDialog"><div class="modal-head"><h3 id="rollMaterialTitle">新增飯捲原料</h3></div><form id="rollMaterialForm"><div class="modal-body"><div class="field"><label>原料名稱</label><input id="rollMaterialName" maxlength="60" required placeholder="例如：起司、肉鬆、海苔"></div><div class="grid"><div class="field"><label>加購單位</label><input id="rollMaterialUnit" maxlength="12" value="份" required></div><div class="field"><label>預設加購價格（元）</label><input id="rollMaterialPrice" type="number" min="0" max="10000000" step="1" required></div><div class="field"><label>每單位成本（元）</label><input id="rollMaterialCost" type="number" min="0" max="10000000" step="1" required></div></div><label style="display:flex;align-items:center;gap:8px"><input id="rollMaterialHidden" type="checkbox" style="width:18px;min-height:18px"> 停止提供此加購原料</label><p class="muted">飯捲加購原料只記錄加價和成本，不自動扣減飯捲口味的手動剩餘支數，也不需要另填原料庫存。</p></div><div class="modal-actions"><button type="button" class="secondary" data-close="rollMaterialDialog">取消</button><button class="primary" type="submit">儲存原料</button></div></form></dialog><dialog id="stockDialog"><div class="modal-head"><h3 id="stockTitle">調整飯卷庫存</h3></div><div class="modal-body"><p id="stockCurrent" class="muted"></p><div class="field"><label>最新估計剩餘數量（支）</label><input id="stockNew" type="number" min="0" max="10000000" step="1" inputmode="numeric"></div><div class="field"><label>異動備註（選填）</label><input id="stockNote" maxlength="100" placeholder="例如：現場盤點、補貨"></div><p class="muted">確認後會同步更新其他裝置，已售出量不受影響。</p></div><div class="modal-actions"><button type="button" class="secondary" data-close="stockDialog">取消</button><button type="button" id="saveStock" class="primary">確認修改庫存</button></div></dialog><dialog id="iceDialog"><div class="modal-head"><h3 id="iceTitle">選擇加購</h3></div><div class="modal-body"><div class="field"><label>組合份數</label><input id="iceQty" type="number" min="1" max="10000" step="1" value="1"></div><div id="iceFlavors"></div><div class="ice-summary"><strong>含加購合計</strong><strong id="iceTotal" class="total">NT$0</strong></div></div><div class="modal-actions"><button class="secondary" data-close="iceDialog">取消</button><button id="addIceToCart" class="primary">加入清單</button></div></dialog>
+<dialog id="productDialog"><div class="modal-head"><h3 id="productTitle">新增商品</h3></div><form id="productForm"><div class="modal-body"><div class="field"><label>商品類型</label><select id="productType"><option value="飯捲">飯捲</option><option value="冰淇淋">冰淇淋</option></select></div><div class="grid"><div class="field"><label>名稱</label><input id="productName" maxlength="60" required></div><div class="field"><label>一份售價（元）</label><input id="productPrice" type="number" min="1" step="1" required></div><div class="field"><label>計價單位</label><input id="productUnit" maxlength="12" value="份" required></div></div><div class="field" id="iceRecipeFields"><label>每份冰淇淋所需原料</label><div id="recipeRows"></div><button id="addRecipe" class="secondary" type="button">＋ 加入原料</button></div><div id="rollProductFields" class="field hidden"><label>飯卷每份成本（元）</label><input id="rollUnitCost" type="number" min="0" max="10000000" inputmode="numeric" step="1"><p class="muted">建立後，在「庫存檢視」填寫該口味目前剩餘支數；不使用原料自動推算。</p></div><div id="iceOptions" class="field hidden"><label>冰淇淋加購口味與一球價格</label><div id="addonOptionRows"></div><button id="addAddonOption" type="button" class="secondary">＋ 新增口味單球售價</button></div><div id="rollOptions" class="field hidden"><label>飯捲加購原料與每份加購價</label><div id="rollAddonRows"></div><button type="button" id="addRollAddon" class="secondary">＋ 新增加購原料</button><p class="muted">未另外指定加購選項時，會自動顯示全部已啟用的飯捲原料，使用其預設加價；如需限定配料或自訂價格，可在此個別設定。飯捲剩餘支數仍由「庫存檢視」人工設定。</p></div><label style="display:flex;gap:8px;align-items:center"><input id="productHidden" type="checkbox" style="width:18px;min-height:18px"> 下架商品</label></div><div class="modal-actions"><button type="button" class="secondary" data-close="productDialog">取消</button><button class="primary">儲存商品</button></div></form></dialog>
+<dialog id="rollMaterialDialog"><div class="modal-head"><h3 id="rollMaterialTitle">新增飯捲原料</h3></div><form id="rollMaterialForm"><div class="modal-body"><div class="field"><label>原料名稱</label><input id="rollMaterialName" maxlength="60" required placeholder="例如：起司、肉鬆、海苔"></div><div class="grid"><div class="field"><label>加購單位</label><input id="rollMaterialUnit" maxlength="12" value="份" required></div><div class="field"><label>預設加購價格（元）</label><input id="rollMaterialPrice" type="number" min="0" max="10000000" step="1" required></div><div class="field"><label>每單位成本（元）</label><input id="rollMaterialCost" type="number" min="0" max="10000000" step="1" required></div></div><label style="display:flex;align-items:center;gap:8px"><input id="rollMaterialHidden" type="checkbox" style="width:18px;min-height:18px"> 停止提供此加購原料</label><p class="muted">飯捲加購原料只記錄加價和成本，不自動扣減飯捲口味的手動剩餘支數，也不需要另填原料庫存。</p></div><div class="modal-actions"><button type="button" class="secondary" data-close="rollMaterialDialog">取消</button><button class="primary" type="submit">儲存原料</button></div></form></dialog><dialog id="stockDialog"><div class="modal-head"><h3 id="stockTitle">調整飯卷庫存</h3></div><div class="modal-body"><p id="stockCurrent" class="muted"></p><div class="field"><label>最新估計剩餘數量（支）</label><input id="stockNew" type="number" min="0" max="10000000" step="1" inputmode="numeric"></div><div class="field"><label>異動備註（選填）</label><input id="stockNote" maxlength="100" placeholder="例如：現場盤點、補貨"></div><p class="muted">確認後會同步更新其他裝置，已售出量不受影響。</p></div><div class="modal-actions"><button type="button" class="secondary" data-close="stockDialog">取消</button><button type="button" id="saveStock" class="primary">確認修改庫存</button></div></dialog><dialog id="iceDialog"><div class="modal-head"><h3 id="iceTitle" tabindex="-1" autofocus>選擇加購</h3></div><div class="modal-body"><div class="field"><label for="iceQty">組合份數</label><div class="base-qty-controls"><button id="iceQtyMinus" type="button" class="ice-step" aria-label="組合減少一份">－</button><input id="iceQty" type="number" min="1" max="10000" step="1" value="1" inputmode="numeric" aria-label="組合份數"><button id="iceQtyPlus" type="button" class="ice-step" aria-label="組合增加一份">＋</button></div></div><div id="iceFlavors"></div><div class="ice-summary"><strong>含加購合計</strong><strong id="iceTotal" class="total">NT$0</strong></div></div><div class="modal-actions"><button class="secondary" data-close="iceDialog">取消</button><button id="addIceToCart" class="primary">加入清單</button></div></dialog>
 <dialog id="otherDialog"><div class="modal-head"><h3>其它品項</h3></div><form id="otherForm"><div class="modal-body"><div class="field"><label for="otherName">品項名稱</label><input id="otherName" maxlength="60" required placeholder="例如：臨時補收費用"></div><div class="field"><label for="otherReason">原因</label><textarea id="otherReason" maxlength="160" rows="3" required placeholder="請填寫記帳原因"></textarea></div><div class="field"><label for="otherPrice">價格（元）</label><input id="otherPrice" type="number" inputmode="numeric" min="0" max="10000000" step="1" required></div><p class="muted">此項目會列入交易及記帳 PDF，不扣除原料庫存。</p></div><div class="modal-actions"><button class="secondary" type="button" data-close="otherDialog">取消</button><button class="primary" type="submit">加入結帳清單</button></div></form></dialog><dialog id="cartDialog"><div class="modal-head"><h3>本次結帳清單</h3></div><div class="modal-body"><div id="cartLines"></div><div id="promoInfo" class="hint"></div><div class="row" style="margin-top:16px"><strong>合計</strong><strong class="total" id="cartDialogTotal">NT$0</strong></div></div><div class="modal-actions"><button class="secondary" data-close="cartDialog">繼續選購</button><button id="toConfirm" class="primary">核對訂單</button></div></dialog>
 <dialog id="confirmDialog"><div class="modal-head"><h3>確認完成結帳？</h3></div><div class="modal-body"><div id="confirmLines"></div><div id="manualDiscountArea" class="field" style="margin-top:14px"><label>給予優惠（直接折抵金額，元）</label><input id="manualDiscount" type="number" min="0" step="1" value="0" inputmode="numeric"><div id="manualReasonField" class="field hidden"><label>優惠原因（必填）</label><textarea id="manualReason" maxlength="150" rows="2" placeholder="例如：活動折扣、補償差額"></textarea></div></div><div class="row"><strong>原價／套餐後</strong><strong id="beforeManualTotal">NT$0</strong></div><div class="row" style="margin:15px 0"><strong>折扣後應收</strong><span><strong id="confirmTotal" class="total">NT$0</strong><button id="exactPaidBtn" class="secondary" type="button">剛好</button></span></div><div id="verifyStatus" class="muted" aria-live="polite"></div><div class="field"><label>實收金額（元）</label><input id="paid" type="number" min="0" step="1"></div><div class="row"><span>找零</span><strong id="change" class="total">NT$0</strong></div></div><div class="modal-actions"><button id="backCart" class="secondary">返回</button><button id="verifyAgainBtn" class="secondary hidden" type="button">核對資料庫結果</button><button id="confirmCheckout" class="primary">確認結帳</button></div></dialog>
 <dialog id="gyAskDialog"><div class="modal-head"><h3 id="gyAskTitle">再次確認</h3></div><div class="modal-body"><p id="gyAskMessage"></p><div id="gyAskPhraseBox" class="field hidden"><label id="gyAskPhraseLabel">再次輸入確認文字</label><input id="gyAskPhrase" type="text" autocomplete="off"></div></div><div class="modal-actions"><button id="gyAskCancel" type="button" class="secondary">取消</button><button id="gyAskYes" type="button" class="primary">確定</button></div></dialog>
@@ -281,7 +287,7 @@ const app=initializeApp(config),auth=getAuth(app),db=getFirestore(app);
 const newRandomId=()=>{const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);return [...bytes].map(b=>b.toString(16).padStart(2,'0')).join('')};
 const $=id=>document.getElementById(id);const money=v=>'NT$'+Number(v||0).toLocaleString('zh-TW',{maximumFractionDigits:0});const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const int=(v,label,min=0,max=1e7)=>{if(v===null||v===undefined||String(v).trim()==='')throw Error(label+'不可空白');const n=Number(v);if(!Number.isSafeInteger(n)||n<min||n>max)throw Error(label+'必須為有效整數');return n};const seatOf=u=>{const m=String(u?.email||'').match(/^seat-(00|[1-9]|[1-9]\d)@school-22aa0\.firebaseapp\.com$/);return m?Number(m[1]):NaN};let toastTimer;
 let authSessionVersion=0;
-const state={user:null,role:null,name:'',products:[],ingredients:[],rollMaterials:[],promos:[],sales:[],audit:[],damages:[],accounts:[],settings:{stallName:'高一丁',sharedCost:0},cart:[],unsubs:[],tab:'checkout',busy:false,pendingOrderId:null,pendingVerification:false,confirmedBaseTotal:0,stockProductId:null,iceProductId:null,editProduct:null,editIngredient:null,editRollMaterial:null,refundId:null,refundUnconfirmedId:null,sync:{products:false,ingredients:false,rollMaterials:false,promos:false,sales:false,damages:false},errors:[]};
+const state={user:null,role:null,name:'',products:[],ingredients:[],rollMaterials:[],promos:[],sales:[],audit:[],damages:[],accounts:[],settings:{stallName:'高一丁',sharedCost:0},cart:[],unsubs:[],tab:'checkout',busy:false,pendingOrderId:null,pendingVerification:false,confirmedBaseTotal:0,stockProductId:null,iceProductId:null,customizeTargetKey:null,editProduct:null,editIngredient:null,editRollMaterial:null,refundId:null,refundUnconfirmedId:null,sync:{products:false,ingredients:false,rollMaterials:false,promos:false,sales:false,damages:false},errors:[]};
 function toast(msg,error=false){const el=$('toast');el.textContent=String(msg);el.classList.toggle('error',error);el.classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.add('hidden'),4200)}
 let gyDoneTimer=null;
 function clearSuccessMark(){if(gyDoneTimer){clearTimeout(gyDoneTimer);gyDoneTimer=null;}const overlay=$('gyDoneOverlay');if(overlay)overlay.classList.add('hidden')}
@@ -319,7 +325,15 @@ const remaining=id=>{const i=state.ingredients.find(x=>x.id===id);return i?Math.
 function isRollCategory(v){return ['飯捲','飯卷','飯糰'].includes(String(v||''));}
 function isRoll(p){return !!p&&isRollCategory(p.category);}
 function manualRemaining(p){return p&&Number.isSafeInteger(p.manualStock)&&p.manualStock>=0?p.manualStock:0;}
-function addonChoices(p){return isRoll(p)?(p.rollAddonOptions||[]).filter(x=>state.rollMaterials.some(r=>r.id===x.id&&!r.hidden)):(p.addonOptions||[]);}
+function addonChoices(p,materials=state.rollMaterials){
+ if(!isRoll(p))return p?.addonOptions||[];
+ const active=materials.filter(m=>!m.hidden);
+ const custom=Array.isArray(p.rollAddonOptions)?p.rollAddonOptions:[];
+ // Already configured specific options: keep that product's selection and its prices.
+ if(custom.length)return custom.filter(x=>active.some(m=>m.id===x.id));
+ // No per-product options: use every enabled add-on ingredient and its default price.
+ return active.map(m=>({id:m.id,price:m.defaultPrice}));
+}
 function addonName(p,id){if(isRoll(p))return state.rollMaterials.find(x=>x.id===id)?.name||'已停用原料';return state.ingredients.find(x=>x.id===id)?.name||'已下架口味';}
 function addonRemaining(p,id){if(isRoll(p)){return state.rollMaterials.some(x=>x.id===id&&!x.hidden)?10000:0;}return remaining(id);}
 function addonUnit(p,id){return isRoll(p)?(state.rollMaterials.find(x=>x.id===id)?.unit||'份'):'球';}
@@ -429,7 +443,7 @@ function rawOrder(lines=state.cart,products=state.products,promos=state.promos,i
   let addTotal=0;const extras=line.extras||[],addonParts=[];
   if(!Array.isArray(extras)||extras.length>12||new Set(extras.map(e=>e.id)).size!==extras.length)throw Error('加購項目有誤或重複');
   for(const extra of extras){
-   const option=addonChoices(p).find(x=>x.id===extra.id);
+   const option=addonChoices(p,rollMaterials).find(x=>x.id===extra.id);
    if(!option||!Number.isSafeInteger(option.price)||option.price<0)throw Error('加購價格或口味已修改，請重新選擇');
    const n=int(extra.qty,'加購數量',1,10000),material=rollMaterialMap.get(extra.id);
    if(roll){if(!material||material.hidden)throw Error('飯捲加購原料已停用或不存在');}
@@ -506,9 +520,9 @@ function renderProducts(){
  const q=$('productSearch').value.trim().toLowerCase();
  const cards=state.products.filter(p=>!p.hidden&&(p.name+' '+p.category).toLowerCase().includes(q));
  const renderCards=items=>items.map(p=>{
- const stock=available(p),n=state.cart.filter(l=>l.productId===p.id).reduce((s,l)=>s+l.qty,0),canAddOn=iceCategory(p.category)||(isRoll(p)&&addonChoices(p).length>0),isLow=baseRecipeLowStock(p);
+ const stock=available(p),n=state.cart.filter(l=>l.productId===p.id).reduce((s,l)=>s+l.qty,0),canAddOn=iceCategory(p.category)||isRoll(p),isLow=baseRecipeLowStock(p);
  const name=esc(p.name),id=esc(p.id);
- return '<article class="product '+(isLow?'low':'')+'"> <button type="button" class="product-tap" data-tap="'+id+'" '+(stock<=0?'disabled':'')+'><span class="name">'+name+'</span><span class="category">'+esc(p.category||'商品')+'</span><span class="money">'+money(p.price)+' <small style="font-size:12px">/ '+esc(p.unit||'份')+'</small></span><span class="meta">已售 '+(p.sold||0)+' · 剩 '+stock+' '+esc(p.unit||'份')+'</span></button>'+(n?'<div class="qty-row"><button type="button" data-card-minus="'+id+'" aria-label="減少 '+name+'">－</button><strong>'+n+' '+esc(p.unit||'份')+'</strong><button type="button" class="plus" data-card-plus="'+id+'" aria-label="增加 '+name+'" '+(n>=stock?'disabled':'')+'>＋</button></div>':'')+(canAddOn?'<button type="button" class="ice-customize" data-open-ice="'+id+'" '+(stock<=0?'disabled':'')+'>'+(isRoll(p)?'飯卷加購／選口味':'加購單球／選口味')+'</button>':'')+'</article>';
+ return '<article class="product '+(isLow?'low':'')+'"> <button type="button" class="product-tap" data-tap="'+id+'" '+(stock<=0?'disabled':'')+'><span class="name">'+name+'</span><span class="category">'+esc(p.category||'商品')+'</span><span class="money">'+money(p.price)+' <small style="font-size:12px">/ '+esc(p.unit||'份')+'</small></span><span class="meta">已售 '+(p.sold||0)+' · 剩 '+stock+' '+esc(p.unit||'份')+'</span></button>'+(n?'<div class="qty-row"><button type="button" data-card-minus="'+id+'" aria-label="減少 '+name+'">－</button><strong>'+n+' '+esc(p.unit||'份')+'</strong><button type="button" class="plus" data-card-plus="'+id+'" aria-label="增加 '+name+'" '+(n>=stock?'disabled':'')+'>＋</button></div>':'')+(canAddOn?'<button type="button" class="ice-customize" data-open-ice="'+id+'" '+(stock<=0?'disabled':'')+'>'+(isRoll(p)?'加購配料／選口味':'加購單球／選口味')+'</button>':'')+'</article>';
  }).join('');
  const section=(title,items)=>items.length?'<section class="checkout-category"><div class="checkout-category-head"><h4>'+title+'</h4><span>'+items.length+' 款商品</span></div><div class="products">'+renderCards(items)+'</div></section>':'';
  const ice=cards.filter(p=>iceCategory(p.category));
@@ -661,7 +675,7 @@ async function saveProduct(e){
 function openRollStock(id){
  const p=state.products.find(x=>x.id===id);
  if(!isRoll(p))return;
- state.stockProductId=id;$('stockTitle').textContent='調整庫存｜'+p.name;
+ state.stockProductId=id;state.stockOpenCount=manualRemaining(p);state.stockOpenSold=Number(p.sold||0);$('stockTitle').textContent='調整庫存｜'+p.name;
  $('stockCurrent').textContent='目前記錄剩 '+manualRemaining(p)+' 支；已販售 '+(p.sold||0)+' 支';
  $('stockNew').value=manualRemaining(p);$('stockNote').value='';$('stockDialog').showModal();
 }
@@ -678,6 +692,7 @@ async function saveRollStock(){
   await runTransaction(db,async tx=>{
    const ref=doc(db,'products',id),snap=await tx.get(ref);
    if(!snap.exists()||!isRoll(snap.data()))throw Error('商品已被更改');
+   if(manualRemaining(snap.data())!==state.stockOpenCount||Number(snap.data().sold||0)!==state.stockOpenSold)throw Error('庫存剛被其他裝置修改或售出，請關閉視窗重新盤點');
    const old=manualRemaining(snap.data());
    const ts=serverTimestamp();
    tx.update(ref,{manualStock:requested,lastStockAuditId:logRef.id,updatedAt:ts});
@@ -725,15 +740,32 @@ function openIce(id){
  const p=state.products.find(x=>x.id===id);
  if(!p||p.hidden||state.busy||state.pendingVerification){toast('目前不能新增此商品',true);return;}
  state.iceProductId=id;
+ const existing=state.cart.filter(l=>l.productId===id);
+ const target=existing.find(l=>!(l.extras||[]).length)||existing[0]||null;
+ state.customizeTargetKey=target?.key||null;
  $('iceTitle').textContent=isRoll(p)?'飯捲加購原料｜'+p.name:'冰淇淋加購｜'+p.name;
- $('iceQty').value=1;
+ $('iceQty').value=target?.qty||1;
  $('iceFlavors').innerHTML=addonChoices(p).map(option=>{
   const stock=addonRemaining(p,option.id),unit=addonUnit(p,option.id);
-  return '<div class="addon-row"><div><strong>'+esc(addonName(p,option.id))+'</strong><div class="hint">加購每'+esc(unit)+' '+money(option.price)+(isRoll(p)?' · 不需計算原料庫存':' · 剩 '+stock+' '+esc(unit))+'</div></div><div class="ice-controls"><button type="button" class="ice-step" data-ice-minus="'+esc(option.id)+'" aria-label="減少加購">−</button><input type="number" class="ice-ball" data-flavor="'+esc(option.id)+'" min="0" max="10000" step="1" value="0" inputmode="numeric" aria-label="加購數量"><button type="button" class="ice-step" data-ice-plus="'+esc(option.id)+'" aria-label="增加加購" '+(stock===0?'disabled':'')+'>＋</button></div></div>';
- }).join('')||'<p class="muted">尚未設定加購口味</p>';
- updateIcePrice();$('iceDialog').showModal();
+  return '<div class="addon-row"><div><strong>'+esc(addonName(p,option.id))+'</strong><div class="hint">加購每'+esc(unit)+' '+money(option.price)+(isRoll(p)?' · 不需計算原料庫存':' · 剩 '+stock+' '+esc(unit))+'</div></div><div class="ice-controls"><button type="button" class="ice-step" data-ice-minus="'+esc(option.id)+'" aria-label="減少加購">−</button><input type="number" class="ice-ball" data-flavor="'+esc(option.id)+'" min="0" max="10000" step="1" value="'+(target?.extras?.find(e=>e.id===option.id)?.qty||0)+'" inputmode="numeric" aria-label="加購數量"><button type="button" class="ice-step" data-ice-plus="'+esc(option.id)+'" aria-label="增加加購" '+(stock===0?'disabled':'')+'>＋</button></div></div>';
+ }).join('')||'<p class="muted">目前沒有可用的加購配料，請先在管理設定建立並啟用飯捲加購原料。</p>';
+ updateIcePrice();$('iceDialog').showModal();$('iceTitle').focus({preventScroll:true});
 }
 
+function saveCustomizedItem(){
+ const {p,qty,extras}=selectedIce();
+ const key=state.customizeTargetKey;
+ if(key){
+  const next=state.cart.map(l=>({...l,extras:(l.extras||[]).map(e=>({...e}))}));
+  const target=next.find(l=>l.key===key&&l.productId===p.id);
+  if(!target)throw Error('商品清單已更新，請重新選擇');
+  target.qty=qty;target.extras=extras;
+  rawOrder(next);
+  state.cart=next;state.pendingOrderId=null;render();
+ }else addItem(p.id,qty,extras);
+ state.customizeTargetKey=null;
+ $('iceDialog').close();
+}
 function selectedIce(){const p=state.products.find(x=>x.id===state.iceProductId),qty=int($('iceQty').value,'份數',1,10000),extras=[...document.querySelectorAll('.ice-ball')].map(x=>({id:x.dataset.flavor,qty:int(x.value,'球數',0,10000)})).filter(x=>x.qty>0);return{p,qty,extras}}
 function updateIcePrice(){try{const {p,qty,extras}=selectedIce();const total=p.price*qty+extras.reduce((s,e)=>s+(addonChoices(p).find(x=>x.id===e.id)?.price||0)*e.qty,0);if(!Number.isSafeInteger(total)||total<0||total>10000000)throw Error('金額超出範圍');$('iceTotal').textContent=money(total);$('addIceToCart').disabled=false}catch{$('iceTotal').textContent='請檢查數量';$('addIceToCart').disabled=true}}
 function renderCart(){
@@ -779,7 +811,7 @@ function setPendingReceipt(payload){
  state.pendingVerification=true;$('pendingCheck').classList.remove('hidden');renderPendingOrders();
 }
 function removePendingReceipt(){
- localStorage.removeItem(pendingKey());sessionStorage.removeItem(pendingLegacyKey());state.pendingVerification=false;
+ try{localStorage.removeItem(pendingKey());sessionStorage.removeItem(pendingLegacyKey());}catch(e){console.warn('未回傳訂單暫存清除失敗，日後請再核對',e)}state.pendingVerification=false;
  $('pendingCheck').classList.add('hidden');$('verifyAgainBtn').classList.add('hidden');$('backCart').disabled=false;renderPendingOrders();
 }
 function renderPendingOrders(){
@@ -792,6 +824,11 @@ function renderPendingOrders(){
  $('pendingVerify').onclick=checkStoredReceipt;$('pendingRetry').onclick=retryPendingOrder;
 }
 async function checkStoredReceipt(){
+ if(state.busy||state.pendingLookupBusy){toast('訂單仍在送出或核對中，請勿重複操作',true);return null;}
+ state.pendingLookupBusy=true;
+ try{return await performStoredReceiptCheck();}finally{state.pendingLookupBusy=false;}
+}
+async function performStoredReceiptCheck(){
  const pending=readPendingReceipt();if(!pending){removePendingReceipt();return false}
  if(!navigator.onLine){toast('目前離線，無法向資料庫核對',true);return null}
  try{
@@ -803,7 +840,7 @@ async function checkStoredReceipt(){
    toast('目前查無該單，未回傳訂單已保留；請按重試送出',true);return false;
   }
   const sale=snap.data();
-  if(sale.actorUid!==state.user.uid||sale.fingerprint!==pending.fingerprint||Number(sale.total)!==Number(pending.total))throw Error('訂單資料與原始內容不一致，請管理員人工核對');
+  if(sale.actorUid!==state.user.uid||sale.fingerprint!==pending.fingerprint||Number(sale.total)!==Number(pending.total)||Number(sale.paid)!==Number(pending.paid)||Number(sale.change)!==Number(pending.paid)-Number(pending.total))throw Error('訂單資料與原始內容不一致，請管理員人工核對');
   if(sale.status!=='valid'){removePendingReceipt();state.cart=[];state.pendingOrderId=null;render();toast('訂單已存在且狀態為已退款，請核對交易紀錄；不會重新入帳',true);return true;}
   removePendingReceipt();state.cart=[];state.pendingOrderId=null;
   if($('confirmDialog').open)$('confirmDialog').close();
@@ -816,7 +853,11 @@ async function checkStoredReceipt(){
  }
 }
 async function retryPendingOrder(){
- if(state.busy)return;
+ if(state.busy||state.retryPendingBusy||state.checkoutAsking)return;
+ state.retryPendingBusy=true;
+ try{await performRetryPendingOrder();}finally{state.retryPendingBusy=false;}
+}
+async function performRetryPendingOrder(){
  const saved=readPendingReceipt();if(!saved||!state.user)return;
  if(!saved.items?.length){toast('舊版暫存訂單缺少商品快照，請核對原始銷售紀錄後人工處理',true);return}
  if(!navigator.onLine){toast('目前沒有網路，暫時無法重試',true);return}
@@ -834,7 +875,7 @@ async function retryPendingOrder(){
 }
 
 async function checkout(options={}){
- if(state.busy)return;
+ if(state.busy||state.checkoutAsking)return;
  if(state.pendingVerification&&!options.retry){await checkStoredReceipt();return;}
  let ui,paid,manual,reason,base,items,id,fingerprint;
  try{
@@ -845,22 +886,29 @@ async function checkout(options={}){
   id=state.pendingOrderId;
   if(!id)throw Error('訂單編號尚未建立，請返回重試');
   items=structuredClone(state.cart);
-  fingerprint=JSON.stringify({items,base:base.total,manual,reason});
-  if(!options.retry&&!await askSiteConfirm('應收 '+money(ui.total)+'，實收 '+money(paid)+'，找零 '+money(paid-ui.total)+'。確定送出到資料庫？',{title:'結帳二次確認'}))return;
+  fingerprint=JSON.stringify({items,base:base.total,manual,reason,paid,total:ui.total});
+  if(!options.retry){
+   state.checkoutAsking=true;
+   let approved=false;
+   try{approved=await askSiteConfirm('應收 '+money(ui.total)+'，實收 '+money(paid)+'，找零 '+money(paid-ui.total)+'。確定送出到資料庫？',{title:'結帳二次確認'});}finally{state.checkoutAsking=false;}
+   if(!approved)return;
+  }
  }catch(e){if(options.retry){state.pendingVerification=true;renderPendingOrders();}toast(e.message,true);return;}
- const checkoutUid=state.user.uid;
+ const checkoutUid=state.user.uid,checkoutActor=actor(),checkoutSeat=seatOf(state.user);
  const ref=doc(db,'sales',id);
  const previous=readPendingReceipt();
  const pending={id,fingerprint,total:ui.total,base:base.total,paid,manual,reason,items,createdAt:previous?.id===id?(previous.createdAt||Date.now()):Date.now()};
  try{setPendingReceipt(pending)}catch(e){toast(e.message,true);return;}
  state.busy=true;$('confirmCheckout').disabled=true;
  $('verifyStatus').textContent='訂單已暫存，正在等待資料庫確認…';
+ const slowCheckoutNotice=setTimeout(()=>{if(state.busy){$('verifyStatus').textContent='網路回應較慢：請保留本頁與訂單暫存，勿重新收款；等待確認或重新整理後到「未回傳訂單」核對。';}},12000);
  try{
   if(!navigator.onLine)throw Error('目前離線，訂單已暫存在裝置，尚未送出');
   if(!Object.values(state.sync).every(Boolean)||state.errors.length)throw Error('必要資料未同步，訂單已暫存，尚未送出');
   const promoSnap=await getDocs(collection(db,'promotions'));
   if(promoSnap.metadata.fromCache||promoSnap.metadata.hasPendingWrites)throw Error('優惠資料未經伺服器確認');
   const promos=promoSnap.docs.map(d=>({id:d.id,...d.data()}));
+  if(state.user?.uid!==checkoutUid)throw Error('登入帳號已切換；此筆訂單結果保留給原帳號核對');
   await runTransaction(db,async tx=>{
    const existing=await tx.get(ref);
    if(existing.exists()){
@@ -892,7 +940,9 @@ async function checkout(options={}){
    const ingredients=ingSnaps.map((snap,i)=>{if(!snap.exists())throw Error('原料已移除');return {id:needIds[i],...snap.data()}});
    const currentPromos=(await Promise.all(promos.map(x=>tx.get(doc(db,'promotions',x.id))))).filter(x=>x.exists()).map(x=>({id:x.id,...x.data()}));
    const baseCalc=rawOrder(items,products,currentPromos,ingredients,rollIngredients);
-   if(baseCalc.total!==base.total)throw Error('售價、套餐或庫存已更新，請返回重新核對');
+   if(baseCalc.total!==base.total||baseCalc.lines.length!==base.lines.length||baseCalc.lines.some((line,i)=>{
+     const prev=base.lines[i];return line.productId!==prev.productId||line.qty!==prev.qty||line.gross!==prev.gross||line.discount!==prev.discount||line.addTotal!==prev.addTotal||line.addonParts.length!==prev.addonParts.length||line.addonParts.some((e,k)=>e.id!==prev.addonParts[k]?.id||e.qty!==prev.addonParts[k]?.qty||e.unitPrice!==prev.addonParts[k]?.unitPrice);
+   }))throw Error('商品售價、優惠或加購選項已變更，請返回重新核對');
    const calc=applyStaffDiscount(baseCalc,manual,reason);
    if(calc.total!==ui.total||paid<calc.total)throw Error('金額核對失敗，未完成交易');
    const productDeltas=saleProductDeltas(calc);
@@ -903,7 +953,7 @@ async function checkout(options={}){
     extras:l.addonParts.map(e=>({id:e.id,qty:e.qty,name:e.name,unit:e.unit,price:e.unitPrice,netAmount:e.netAmount})),
     reason:isOtherLine(l)?l.reason:'',gross:l.gross,addonTotal:l.addTotal,promoDiscount:l.discount,manualDiscount:l.manualDiscount,discount:l.discount+l.manualDiscount,lineTotal:l.lineTotal}));
    const now=serverTimestamp();
-   tx.set(ref,{lines,needs:calc.needs,rollNeeds:calc.rollNeeds,productDeltas,total:calc.total,baseTotal:baseCalc.total,discount:calc.discount,promoDiscount:calc.promoDiscount,manualDiscount:calc.manualDiscount,manualReason:calc.manualReason,estimatedRollCost:rollCost,paid,change:paid-calc.total,status:'valid',hidden:false,fingerprint,actorUid:state.user.uid,actorName:actor(),seat:seatOf(state.user),createdAt:now});
+   tx.set(ref,{lines,needs:calc.needs,rollNeeds:calc.rollNeeds,productDeltas,total:calc.total,baseTotal:baseCalc.total,discount:calc.discount,promoDiscount:calc.promoDiscount,manualDiscount:calc.manualDiscount,manualReason:calc.manualReason,estimatedRollCost:rollCost,paid,change:paid-calc.total,status:'valid',hidden:false,fingerprint,actorUid:checkoutUid,actorName:checkoutActor,seat:checkoutSeat,createdAt:now});
    for(let i=0;i<skuIds.length;i++){
     const p=products.find(x=>x.id===skuIds[i]),d=productDeltas[p.id];if(!d)continue;
     const update={sold:(p.sold||0)+d.sold,revenue:(p.revenue||0)+d.revenue,updatedAt:now,lastOrderId:id};
@@ -913,15 +963,16 @@ async function checkout(options={}){
    for(let i=0;i<needIds.length;i++){
     const ing=ingredients[i];tx.update(iRefs[i],{usedQty:ing.usedQty+calc.needs[ing.id],updatedAt:now,lastOrderId:id});
    }
-   tx.set(doc(db,'audit',id),{action:'checkout',summary:('結帳 '+money(calc.total)+(manual?'；人工優惠 '+money(manual)+'（'+reason+'）':'')).slice(0,280),subjectId:id,actorUid:state.user.uid,actorName:actor(),seat:seatOf(state.user),createdAt:now,hidden:false});
+   tx.set(doc(db,'audit',id),{action:'checkout',summary:('結帳 '+money(calc.total)+(manual?'；人工優惠 '+money(manual)+'（'+reason+'）':'')).slice(0,280),subjectId:id,actorUid:checkoutUid,actorName:checkoutActor,seat:checkoutSeat,createdAt:now,hidden:false});
   });
   $('verifyStatus').textContent='已送出，正在向伺服器查核訂單…';
   const verified=await getDocFromServer(ref);
-  if(!verified.exists()||verified.metadata.fromCache||verified.metadata.hasPendingWrites||verified.data().actorUid!==checkoutUid||verified.data().fingerprint!==fingerprint||verified.data().status!=='valid'||verified.data().total!==ui.total)throw Error('伺服器尚未確認這筆訂單');
+  if(!verified.exists()||verified.metadata.fromCache||verified.metadata.hasPendingWrites||verified.data().actorUid!==checkoutUid||verified.data().fingerprint!==fingerprint||verified.data().status!=='valid'||verified.data().total!==ui.total||verified.data().paid!==paid||verified.data().change!==paid-ui.total)throw Error('伺服器尚未確認這筆訂單');
   if(state.user?.uid!==checkoutUid)throw Error('登入帳號已切換；請使用原帳號核對該筆訂單');
   removePendingReceipt();state.cart=[];state.pendingOrderId=null;
   $('confirmDialog').close();render();showSuccessMark();toast('資料庫已確認結帳 '+money(verified.data().total)+' · 找零 '+money(verified.data().change));
  }catch(e){
+  if(state.user?.uid!==checkoutUid){toast('登入帳號已切換，原訂單暫存保留在原帳號，請重新登入核對；不得再收款。',true);return;}
   const rejected=['permission-denied','invalid-argument','failed-precondition'].includes(e.code);
   state.pendingVerification=true;renderPendingOrders();
   $('verifyStatus').textContent=(rejected?'資料庫拒絕寫入：':'交易結果未確認：')+e.message+'。已存入「未回傳訂單」；請核對後使用原編號重試，勿再次收款。';$('verifyAgainBtn').classList.remove('hidden');$('backCart').disabled=true;
@@ -929,7 +980,7 @@ async function checkout(options={}){
   if($('confirmDialog').open)$('confirmDialog').close();
   tab('pendingOrders');
   toast((rejected?'資料庫拒絕寫入，已保留暫存：':'結帳未確認，已保留暫存：')+e.message,true);
- }finally{state.busy=false;updateChange();}
+ }finally{clearTimeout(slowCheckoutNotice);state.busy=false;updateChange();}
 }
 
 function openRefund(id){
@@ -1206,8 +1257,8 @@ async function downloadPdf(type){
 }
 $('reportDate').value=todayTaiwan();
 function setTheme(dark){document.body.classList.toggle('dark',dark);$('themeBtn').textContent=dark?'☀️ 淺色':'🌙 深色';try{localStorage.setItem('gy-v2-theme',dark?'dark':'light')}catch(e){console.warn('無法儲存主題偏好',e)}}let initialTheme=false;try{initialTheme=localStorage.getItem('gy-v2-theme')==='dark'}catch(e){console.warn('無法讀取主題偏好',e)}setTheme(initialTheme);$('themeBtn').onclick=()=>setTheme(!document.body.classList.contains('dark'));window.addEventListener('online',setSync);window.addEventListener('offline',setSync);document.addEventListener('visibilitychange',()=>{if(!document.hidden)setSync()});
-document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).close());$('loginForm').onsubmit=async e=>{e.preventDefault();try{const raw=$('seat').value.trim();if(!/^(00|0?[1-9]|[1-9]\d)$/.test(raw))throw Error('座號格式不正確');$('loginBtn').disabled=true;await signInWithEmailAndPassword(auth,'seat-'+(Number(raw)===0?'00':Number(raw))+'@school-22aa0.firebaseapp.com',$('password').value);$('password').value=''}catch(err){$('loginError').textContent='登入失敗：'+err.message}finally{$('loginBtn').disabled=false}};$('logoutBtn').onclick=()=>signOut(auth);
-document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tab(b.dataset.tab));$('productSearch').oninput=renderProducts;$('productGrid').onclick=e=>{const plus=e.target.closest('[data-card-plus]'),minus=e.target.closest('[data-card-minus]'),ice=e.target.closest('[data-open-ice]'),tap=e.target.closest('[data-tap]');if(minus)adjustCard(minus.dataset.cardMinus,-1);else if(plus)adjustCard(plus.dataset.cardPlus,1);else if(ice)openIce(ice.dataset.openIce);else if(tap)adjustCard(tap.dataset.tap,1)};$('iceQty').oninput=updateIcePrice;$('iceFlavors').oninput=updateIcePrice;$('iceFlavors').onclick=e=>{const b=e.target.closest('[data-ice-plus],[data-ice-minus]');if(!b)return;const id=b.dataset.icePlus||b.dataset.iceMinus;const el=[...document.querySelectorAll('.ice-ball')].find(x=>x.dataset.flavor===id);if(!el)return;const delta=b.hasAttribute('data-ice-plus')?1:-1;el.value=Math.max(0,Math.min(10000,(Number(el.value)||0)+delta));updateIcePrice()};$('addIceToCart').onclick=()=>{try{const {p,qty,extras}=selectedIce();addItem(p.id,qty,extras);$('iceDialog').close()}catch(e){toast(e.message,true)}};
+document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).close());$('loginForm').onsubmit=async e=>{e.preventDefault();try{const raw=$('seat').value.trim();if(!/^(00|0?[1-9]|[1-9]\d)$/.test(raw))throw Error('座號格式不正確');$('loginBtn').disabled=true;await signInWithEmailAndPassword(auth,'seat-'+(Number(raw)===0?'00':Number(raw))+'@school-22aa0.firebaseapp.com',$('password').value);$('password').value=''}catch(err){$('loginError').textContent='登入失敗：'+err.message}finally{$('loginBtn').disabled=false}};$('logoutBtn').onclick=()=>{if(state.busy||state.checkoutAsking||state.pendingVerification){toast('有訂單正在送出或尚未核對，請先完成核對再登出',true);return;}signOut(auth)};
+document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tab(b.dataset.tab));$('productSearch').oninput=renderProducts;$('productGrid').onclick=e=>{const plus=e.target.closest('[data-card-plus]'),minus=e.target.closest('[data-card-minus]'),ice=e.target.closest('[data-open-ice]'),tap=e.target.closest('[data-tap]');if(minus)adjustCard(minus.dataset.cardMinus,-1);else if(plus)adjustCard(plus.dataset.cardPlus,1);else if(ice)openIce(ice.dataset.openIce);else if(tap)adjustCard(tap.dataset.tap,1)};$('iceQty').oninput=updateIcePrice;for(const [id,delta] of [['iceQtyMinus',-1],['iceQtyPlus',1]])$(id).onclick=()=>{const el=$('iceQty');const n=Number(el.value);el.value=String(Math.max(1,Math.min(10000,(Number.isSafeInteger(n)?n:1)+delta)));updateIcePrice()};$('iceFlavors').oninput=updateIcePrice;$('iceFlavors').onclick=e=>{const b=e.target.closest('[data-ice-plus],[data-ice-minus]');if(!b)return;const id=b.dataset.icePlus||b.dataset.iceMinus;const el=[...document.querySelectorAll('.ice-ball')].find(x=>x.dataset.flavor===id);if(!el)return;const delta=b.hasAttribute('data-ice-plus')?1:-1;el.value=Math.max(0,Math.min(10000,(Number(el.value)||0)+delta));updateIcePrice()};$('addIceToCart').onclick=()=>{try{saveCustomizedItem()}catch(e){toast(e.message,true)}};
 $('productGrid').addEventListener('click',e=>{if(e.target.closest('#openOther')){$('otherDialog').showModal();}});$('otherForm').onsubmit=addOther;
 $('openCart').onclick=()=>{renderCart();if(state.pendingVerification){toast('請先查核上一筆交易',true);return;}$('cartDialog').showModal()};$('cartLines').onclick=e=>{const plus=e.target.closest('[data-cart-plus]'),minus=e.target.closest('[data-cart-minus]'),b=e.target.closest('[data-remove-cart]');if(plus)changeCartQty(plus.dataset.cartPlus,1);else if(minus)changeCartQty(minus.dataset.cartMinus,-1);else if(b){state.cart=state.cart.filter(l=>l.key!==b.dataset.removeCart);state.pendingOrderId=null;render();renderCart()}};$('toConfirm').onclick=showConfirm;$('backCart').onclick=()=>{$('confirmDialog').close();renderCart();$('cartDialog').showModal()};$('exactPaidBtn').onclick=()=>{try{$('paid').value=manualQuote().total;updateChange()}catch(e){toast(e.message,true)}};$('paid').oninput=updateChange;$('manualDiscount').oninput=updateChange;$('manualReason').oninput=updateChange;$('confirmCheckout').onclick=checkout;$('pendingCheck').onclick=checkStoredReceipt;$('verifyAgainBtn').onclick=checkStoredReceipt;
 $('openDamage').onclick=openDamage;$('damageForm').onsubmit=saveDamage;$('damageIngredient').onchange=updateDamageEstimate;$('damageQty').oninput=updateDamageEstimate;$('damageReason').onchange=()=>{$('damageReasonOtherBox').classList.toggle('hidden',$('damageReason').value!=='其他')};$('addIngredient').onclick=()=>openIngredient();$('ingredientForm').onsubmit=saveIngredient;$('ingredientList').onclick=e=>{const b=e.target.closest('[data-edit-ingredient]');if(b)openIngredient(b.dataset.editIngredient)};$('addRollMaterial').onclick=()=>openRollMaterial();$('rollMaterialForm').onsubmit=saveRollMaterial;$('rollMaterialList').onclick=e=>{const b=e.target.closest('[data-edit-roll-material]');if(b)openRollMaterial(b.dataset.editRollMaterial)};$('addProduct').onclick=()=>openProduct();$('addRollProduct').onclick=()=>openProduct(null,'飯捲');$('addRollAddon').onclick=()=>rollAddonRow();$('rollAddonRows').onclick=e=>{const b=e.target.closest('[data-remove-row]');if(b)b.closest('.addon-row').remove()};$('rollInventoryGrid').onclick=e=>{const b=e.target.closest('[data-stock-roll]');if(b)openRollStock(b.dataset.stockRoll)};$('saveStock').onclick=saveRollStock;$('productAdminList').onclick=e=>{const b=e.target.closest('[data-edit-product]');if(b)openProduct(b.dataset.editProduct)};$('productType').onchange=updateType;$('addRecipe').onclick=()=>recipeRow();$('addAddonOption').onclick=()=>addonRow();$('recipeRows').onclick=$('addonOptionRows').onclick=e=>{if(e.target.closest('[data-remove-row]'))e.target.closest('.addon-row').remove()};$('productForm').onsubmit=saveProduct;$('saveSettings').onclick=saveSettings;$('promoForm').onsubmit=savePromo;$('createAccountForm').onsubmit=createAccount;
