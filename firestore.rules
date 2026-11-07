@@ -98,7 +98,7 @@ service cloud.firestore {
           ])
           && request.resource.data.price is int
           && request.resource.data.price > 0
-          && request.resource.data.category in ['飯捲','冰淇淋']
+          && request.resource.data.category in ['飯捲','冰淇淋','冰品']
           && request.resource.data.unitCost is int
           && request.resource.data.unitCost >= 0
           && request.resource.data.recipe is list
@@ -137,7 +137,7 @@ service cloud.firestore {
             && request.resource.data.manualStock is int
             && request.resource.data.manualStock >= 0
             && resource.data.get('manualStock',0) - request.resource.data.manualStock == getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].rollQty)
-           || (resource.data.category == '冰淇淋'
+           || (resource.data.category in ['冰淇淋','冰品']
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['manualStock']))))
         || (member()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -320,12 +320,19 @@ service cloud.firestore {
         && request.resource.data.change == request.resource.data.paid - request.resource.data.total;
       allow update: if (superAdmin()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status','refundReason','refundedByUid','refundedAt',
+            'status','refundReason','refundedByUid','refundedBySeat','refundedByName','refundedAt',
             'hidden','hiddenBy','hiddenAt'
           ])
           && request.resource.data.status == 'voided'
           && request.resource.data.refundReason == '26 號清空測試資料'
           && request.resource.data.refundedByUid == request.auth.uid
+          && request.resource.data.refundedBySeat is int
+          && request.resource.data.refundedBySeat >= 0
+          && request.resource.data.refundedBySeat <= 99
+          && request.resource.data.refundedBySeat == (superAdmin() ? 26 : get(accountPath()).data.seat)
+          && request.resource.data.refundedByName is string
+          && request.resource.data.refundedByName.size() > 0
+          && request.resource.data.refundedByName.size() <= 80
           && request.resource.data.refundedAt == request.time
           && request.resource.data.hidden == true
           && request.resource.data.hiddenBy == request.auth.uid
@@ -333,10 +340,15 @@ service cloud.firestore {
         || (member()
           && resource.data.status == 'valid'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status','refundReason','refundedByUid','refundedAt'
+            'status','refundReason','refundedByUid','refundedBySeat','refundedByName','refundedAt'
           ])
           && request.resource.data.status == 'voided'
           && request.resource.data.refundedByUid == request.auth.uid
+          && request.resource.data.refundedBySeat is int
+          && request.resource.data.refundedBySeat == (superAdmin() ? 26 : get(accountPath()).data.seat)
+          && request.resource.data.refundedByName is string
+          && request.resource.data.refundedByName.size() > 0
+          && request.resource.data.refundedByName.size() <= 80
           && request.resource.data.refundedAt == request.time
           && request.resource.data.refundReason is string
           && request.resource.data.refundReason.size() > 0
