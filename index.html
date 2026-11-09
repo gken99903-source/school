@@ -2189,13 +2189,18 @@ async function checkout(options={}){
   $('confirmDialog').close();state.lastReceipt={id,...verified.data()};$('lastReceipt').classList.remove('hidden');render();showSuccessMark();cashierFeedback('success');toast('資料庫已確認 '+orderDisplay({id,...verified.data()})+' · '+money(verified.data().total)+' · 找零 '+money(verified.data().change));
  }catch(e){
   if(state.user?.uid!==checkoutUid){toast('登入帳號已切換，原訂單暫存保留在原帳號，請重新登入核對；不得再收款。',true);return;}
-  const rejected=['permission-denied','invalid-argument','failed-precondition'].includes(e.code);
+  const permissionRejected=e?.code==='permission-denied'||/Missing or insufficient permissions/i.test(String(e?.message||''));
+  const rejected=permissionRejected||['invalid-argument','failed-precondition'].includes(e?.code);
   state.pendingVerification=true;renderPendingOrders();
-  $('verifyStatus').textContent=(rejected?'資料庫拒絕寫入：':'交易結果未確認：')+e.message+'。已存入「未回傳訂單」；請先向伺服器核對，確認原顧客訂單有效才可重試，否則使用「核對後解除失敗暫存」。勿再次收款。';$('verifyAgainBtn').classList.remove('hidden');$('backCart').disabled=true;
+  const reason=permissionRejected
+   ?'Firestore 安全規則拒絕交易。請管理員確認已將本次配套 firestore.rules 發布到 Firebase Console → Firestore Database → 規則（只上傳 GitHub 不會套用規則）。'
+   :(rejected?'資料庫拒絕交易：':'交易結果尚未確認：')+String(e?.message||'未知錯誤');
+  $('verifyStatus').textContent=reason+' 已保留「未回傳訂單」；請先向伺服器核對。若原顧客訂單不能重送，請使用「核對後解除失敗暫存」恢復開單。勿重複收款。';
+  $('verifyAgainBtn').classList.remove('hidden');$('backCart').disabled=true;
   $('pendingCheck').classList.remove('hidden');
   if($('confirmDialog').open)$('confirmDialog').close();
   tab('pendingOrders');
-  toast((rejected?'資料庫拒絕寫入，已保留暫存：':'結帳未確認，已保留暫存：')+e.message,true);
+  toast((permissionRejected?'資料庫規則拒絕結帳；請先發布配套規則。':(rejected?'資料庫拒絕寫入：':'結帳未確認：'))+String(e?.message||''),true);
  }finally{clearTimeout(slowCheckoutNotice);state.busy=false;updateChange();}
 }
 
