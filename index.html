@@ -2193,14 +2193,14 @@ async function checkout(options={}){
   const rejected=permissionRejected||['invalid-argument','failed-precondition'].includes(e?.code);
   state.pendingVerification=true;renderPendingOrders();
   const reason=permissionRejected
-   ?'Firestore 安全規則拒絕交易。請管理員確認已將本次配套 firestore.rules 發布到 Firebase Console → Firestore Database → 規則（只上傳 GitHub 不會套用規則）。'
+   ?'Firestore 拒絕結帳交易。規則可能已發布；需核對舊商品欄位、規則條件與交易寫入內容，請勿直接重送或再次收款。'
    :(rejected?'資料庫拒絕交易：':'交易結果尚未確認：')+String(e?.message||'未知錯誤');
   $('verifyStatus').textContent=reason+' 已保留「未回傳訂單」；請先向伺服器核對。若原顧客訂單不能重送，請使用「核對後解除失敗暫存」恢復開單。勿重複收款。';
   $('verifyAgainBtn').classList.remove('hidden');$('backCart').disabled=true;
   $('pendingCheck').classList.remove('hidden');
   if($('confirmDialog').open)$('confirmDialog').close();
   tab('pendingOrders');
-  toast((permissionRejected?'資料庫規則拒絕結帳；請先發布配套規則。':(rejected?'資料庫拒絕寫入：':'結帳未確認：'))+String(e?.message||''),true);
+  toast((permissionRejected?'資料庫權限核對未通過，交易已暫存：':(rejected?'資料庫拒絕寫入：':'結帳未確認：'))+String(e?.message||''),true);
  }finally{clearTimeout(slowCheckoutNotice);state.busy=false;updateChange();}
 }
 
