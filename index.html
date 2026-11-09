@@ -1046,6 +1046,19 @@ async function ensureCustomerQrLibrary(){
  return customerQrLibraryLoading;
 }
 const customerOrderIdValid=id=>/^[a-f0-9]{32}$/.test(String(id||''));
+// Firestore may return map keys in a different order. Compare values, never JSON field ordering.
+function customerOrderItemsMatch(original,checkoutItems){
+ if(!Array.isArray(original)||!Array.isArray(checkoutItems)||original.length!==checkoutItems.length)return false;
+ return original.every((line,i)=>{
+  const current=checkoutItems[i];
+  if(!line||!current||line.productId!==current.productId||!Number.isSafeInteger(line.qty)||line.qty!==current.qty)return false;
+  const a=line.extras||[],b=current.extras||[];
+  if(!Array.isArray(a)||!Array.isArray(b)||a.length!==b.length)return false;
+  const encode=extras=>extras.map(x=>x&&typeof x.id==='string'&&Number.isSafeInteger(x.qty)&&x.qty>0?x.id+'#'+x.qty:null).sort();
+  const ea=encode(a),eb=encode(b);
+  return ea.every((part,j)=>part!==null&&part===eb[j]);
+ });
+}
 const customerExpireTime=order=>order?.createdAt?.toMillis?.()?order.createdAt.toMillis()+CUSTOMER_ORDER_MS:0;
 const customerExpired=order=>!!customerExpireTime(order)&&Date.now()>=customerExpireTime(order);
 const customerOrderUrl=id=>{const url=new URL(location.href);url.searchParams.set('order',id);url.searchParams.delete('display');return url.href};
@@ -1945,8 +1958,8 @@ function renderPendingOrders(){
  if(!p){el.innerHTML='<p class="muted">此裝置目前沒有未回傳訂單。</p>';return}
  const date=new Date(p.createdAt||Date.now()).toLocaleString('zh-TW');
  const lines=(p.items||[]).map(x=>esc(x.otherName||state.products.find(y=>y.id===x.productId)?.name||x.productId)+' × '+(x.qty||1)).join('、');
- el.innerHTML='<div class="pending-item"><b>待核對：'+money(p.total)+'</b><div class="muted">建立時間：'+esc(date)+'</div><div class="muted">訂單：'+esc(p.id)+'</div><div>'+lines+'</div><div class="hint">資料僅保留在這台裝置；若已收款，請勿再次收款。</div><div class="pending-actions"><button type="button" class="secondary" id="pendingVerify">向伺服器核對</button><button type="button" class="primary" id="pendingRetry">使用原編號重試送出</button></div></div>';
- $('pendingVerify').onclick=checkStoredReceipt;$('pendingRetry').onclick=retryPendingOrder;
+ el.innerHTML='<div class="pending-item"><b>待核對：'+money(p.total)+'</b><div class="muted">建立時間：'+esc(date)+'</div><div class="muted">訂單：'+esc(p.id)+'</div><div>'+lines+'</div><div class="hint">資料僅保留在這台裝置；若已收款，請勿再次收款。</div><div class="pending-actions"><button type="button" class="secondary" id="pendingVerify">向伺服器核對</button><button type="button" class="primary" id="pendingRetry">使用原編號重試送出</button><button type="button" class="secondary" id="pendingResolve">核對後解除失敗暫存</button></div><p class="hint">若 QR 顧客訂單已失效或無法重送，先點「核對後解除失敗暫存」，確認未重複入帳，才能開新單。若已收款，必須先完成退款或確認款項處置。</p></div>';
+ $('pendingVerify').onclick=checkStoredReceipt;$('pendingRetry').onclick=retryPendingOrder;$('pendingResolve').onclick=resolveRejectedPendingOrder;
 }
 async function checkStoredReceipt(){
  if(state.busy||state.pendingLookupBusy){toast('訂單仍在送出或核對中，請勿重複操作',true);return null;}
@@ -1960,9 +1973,9 @@ async function performStoredReceiptCheck(){
   const snap=await getDocFromServer(doc(db,'sales',pending.id));
   if(!snap.exists()){
    state.pendingVerification=true;
-   $('verifyStatus').textContent='伺服器目前查無此單；仍已保留在未回傳訂單，請核對後使用相同訂單編號重試。';
+   $('verifyStatus').textContent='伺服器目前查無此筆銷售；暫存已保留。若原顧客訂單仍有效，可重試；若已失效，請先「核對後解除失敗暫存」以恢復開單。';
    $('verifyAgainBtn').classList.remove('hidden');renderPendingOrders();
-   toast('目前查無該單，未回傳訂單已保留；請按重試送出',true);return false;
+   toast('伺服器查無銷售紀錄；請核對後選擇重試或安全解除暫存',true);return false;
   }
   const sale=snap.data();
   if(sale.actorUid!==state.user.uid||sale.fingerprint!==pending.fingerprint||Number(sale.total)!==Number(pending.total)||Number(sale.paid)!==Number(pending.paid)||Number(sale.change)!==Number(pending.paid)-Number(pending.total))throw Error('訂單資料與原始內容不一致，請管理員人工核對');
@@ -1977,6 +1990,58 @@ async function performStoredReceiptCheck(){
   toast('訂單待核對：'+e.message,true);return null;
  }
 }
+// Recover a rejected local checkout only after authoritative server checks.
+// Never clear a local receipt automatically on a network error or an unknown payment state.
+async function resolveRejectedPendingOrder(){
+ if(state.busy||state.pendingLookupBusy||state.pendingRecoveryBusy||!state.user)return;
+ const pending=readPendingReceipt();if(!pending)return;
+ if(!navigator.onLine)return toast('目前離線；無法安全核對，暫存仍保留',true);
+ state.pendingRecoveryBusy=true;
+ try{
+  const saleSnap=await getDocFromServer(doc(db,'sales',pending.id));
+  if(saleSnap.exists()){
+   // A stored sale must go through the usual fingerprint/payment verification.
+   await performStoredReceiptCheck();
+   return;
+  }
+  let status='無顧客 QR 關聯';
+  if(pending.customerOrderId){
+   if(!customerOrderIdValid(pending.customerOrderId))throw Error('顧客訂單碼格式錯誤，需管理員人工核對');
+   const orderSnap=await getDocFromServer(doc(db,'customerOrders',pending.customerOrderId));
+   if(orderSnap.exists()){
+    const order=orderSnap.data();status=order.status;
+    if(status==='paid'){
+     if(!order.saleId||typeof order.saleId!=='string')throw Error('顧客標示已付款但缺少銷售編號，需人工核對');
+     const paidSale=await getDocFromServer(doc(db,'sales',order.saleId));
+     if(!paidSale.exists()||paidSale.data().customerOrderId!==pending.customerOrderId||paidSale.data().status!=='valid')throw Error('顧客標示已付款，但找不到一致的銷售紀錄，需人工核對');
+    }else if(status!=='pending')throw Error('顧客訂單狀態不明（'+String(status)+'），需人工核對');
+   }else status='已刪除或不存在';
+  }
+  const note=status==='paid'
+   ?'伺服器已確認此顧客訂單由另一張銷售單完成付款；本機暫存編號查無銷售紀錄。確認沒有重複收款，並已核對銷售紀錄，才解除這份失敗暫存？'
+   :'伺服器確認本機暫存的銷售編號不存在（顧客訂單：'+status+'）。若已向顧客收款，請先退款或完成其他核對。確定這筆沒有未處理的收款、要保留本機備份並恢復新訂單？';
+  if(!await askSiteConfirm(note,{title:'安全解除失敗暫存'}))return;
+  // Re-check server after confirmation to reduce a potential race with another cashier.
+  const repeat=await getDocFromServer(doc(db,'sales',pending.id));
+  if(repeat.exists()){await performStoredReceiptCheck();return}
+  if(pending.customerOrderId){
+   const latest=await getDocFromServer(doc(db,'customerOrders',pending.customerOrderId));
+   if(latest.exists()&&latest.data().status==='paid'&&status!=='paid')throw Error('顧客付款狀態在核對期間發生變更，請重新核對');
+   if(latest.exists()&&latest.data().status!=='pending'&&latest.data().status!=='paid')throw Error('顧客訂單狀態變動，請重新核對');
+  }
+  try{
+   const historyKey='gy_v2_rejected_checkout_archive_'+state.user.uid;
+   const old=JSON.parse(localStorage.getItem(historyKey)||'[]');
+   localStorage.setItem(historyKey,JSON.stringify([{...pending,archivedAt:Date.now(),customerStatus:status},...(Array.isArray(old)?old:[])].slice(0,10)));
+  }catch(err){throw Error('無法保留未成功交易的本機備份，暫不解除：'+err.message)}
+  removePendingReceipt();state.cart=[];state.pendingOrderId=null;state.activeCustomerOrderId=null;
+  if($('confirmDialog').open)$('confirmDialog').close();
+  if($('cartDialog').open)$('cartDialog').close();
+  tab('checkout');render();
+  toast('已向伺服器核對未入帳，保留本機備份並恢復新訂單。若顧客尚需購買，請重新建立訂單。');
+ }catch(e){toast('未能安全解除暫存：'+e.message,true)}
+ finally{state.pendingRecoveryBusy=false}
+}
 async function retryPendingOrder(){
  if(state.busy||state.retryPendingBusy||state.checkoutAsking)return;
  state.retryPendingBusy=true;
@@ -1987,6 +2052,18 @@ async function performRetryPendingOrder(){
  if(!saved.items?.length){toast('舊版暫存訂單缺少商品快照，請核對原始銷售紀錄後人工處理',true);return}
  if(!navigator.onLine){toast('目前沒有網路，暫時無法重試',true);return}
  if(state.busy)return;const found=await checkStoredReceipt();if(found!==false)return;
+ if(saved.customerOrderId){
+  // A canceled, already-paid or expired guest order cannot be retried with its original link.
+  try{
+   const checked=await getDocFromServer(doc(db,'customerOrders',saved.customerOrderId));
+   if(!checked.exists()||checked.data().status!=='pending'||customerExpired(checked.data())){
+    toast('這張顧客訂單已付款、已取消或已逾期；請使用「核對後解除失敗暫存」，不要再重送',true);return;
+   }
+   if(!customerOrderItemsMatch(checked.data().items,saved.items)){
+    toast('暫存商品與顧客訂單不一致，不能重試；請先核對並解除暫存',true);return;
+   }
+  }catch(e){toast('無法核對顧客訂單：'+e.message,true);return}
+ }
  if(!await askSiteConfirm('伺服器目前查無此訂單。將使用相同訂單編號重試送出，應收 '+money(saved.total)+'。請確認顧客沒有被再次收款。',{title:'重試未回傳訂單'}))return;
  try{
   state.cart=structuredClone(saved.items);state.pendingOrderId=saved.id;state.activeCustomerOrderId=saved.customerOrderId||null;
@@ -2048,7 +2125,7 @@ async function checkout(options={}){
    if(customerRef){
     if(!customerSnap.exists()||customerSnap.data().status!=='pending')throw Error('顧客訂單已付款、已取消或不存在；禁止重複結帳');
     if(!customerSnap.data().createdAt||Date.now()>=customerSnap.data().createdAt.toMillis()+600000)throw Error('顧客訂單已超過 10 分鐘，請重新點餐');
-    if(JSON.stringify(customerSnap.data().items)!==JSON.stringify(items.map(l=>({productId:l.productId,qty:l.qty,extras:l.extras||[]}))))throw Error('顧客訂單內容已變更，請重新核對');
+    if(!customerOrderItemsMatch(customerSnap.data().items,items))throw Error('顧客訂單內容已變更，請重新核對');
    }
    const counterSnap=await tx.get(counterRef),lastSeq=counterSnap.exists()?Number(counterSnap.data().lastNo):0;
    if(!Number.isSafeInteger(lastSeq)||lastSeq<0||lastSeq>=999999)throw Error('訂單流水號已超出限制');
@@ -2114,7 +2191,7 @@ async function checkout(options={}){
   if(state.user?.uid!==checkoutUid){toast('登入帳號已切換，原訂單暫存保留在原帳號，請重新登入核對；不得再收款。',true);return;}
   const rejected=['permission-denied','invalid-argument','failed-precondition'].includes(e.code);
   state.pendingVerification=true;renderPendingOrders();
-  $('verifyStatus').textContent=(rejected?'資料庫拒絕寫入：':'交易結果未確認：')+e.message+'。已存入「未回傳訂單」；請核對後使用原編號重試，勿再次收款。';$('verifyAgainBtn').classList.remove('hidden');$('backCart').disabled=true;
+  $('verifyStatus').textContent=(rejected?'資料庫拒絕寫入：':'交易結果未確認：')+e.message+'。已存入「未回傳訂單」；請先向伺服器核對，確認原顧客訂單有效才可重試，否則使用「核對後解除失敗暫存」。勿再次收款。';$('verifyAgainBtn').classList.remove('hidden');$('backCart').disabled=true;
   $('pendingCheck').classList.remove('hidden');
   if($('confirmDialog').open)$('confirmDialog').close();
   tab('pendingOrders');
