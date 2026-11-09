@@ -144,8 +144,8 @@ service cloud.firestore {
         let sale = getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data;
         return sale.actorUid == request.auth.uid
           && sale.createdAt == request.time && sale.status == 'valid'
-          && sale.productDeltas[id].sold == request.resource.data.sold - resource.data.sold
-          && sale.productDeltas[id].revenue == request.resource.data.revenue - resource.data.revenue;
+          && sale.productDeltas[id].sold == request.resource.data.sold - resource.data.get('sold', 0)
+          && sale.productDeltas[id].revenue == request.resource.data.revenue - resource.data.get('revenue', 0);
       }
       function linkedRollQty() {
         let sale = getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data;
@@ -214,9 +214,11 @@ service cloud.firestore {
           ])
           && request.resource.data.updatedAt == request.time
           && request.resource.data.sold is int
-          && request.resource.data.sold > resource.data.sold
+          && resource.data.get('sold', 0) is int
+          && resource.data.get('revenue', 0) is int
+          && request.resource.data.sold > resource.data.get('sold', 0)
           && request.resource.data.revenue is int
-          && request.resource.data.revenue >= resource.data.revenue
+          && request.resource.data.revenue >= resource.data.get('revenue', 0)
           && linkedSaleProductChange()
           && ((resource.data.category in ['飯捲','飯卷','飯糰']
             && request.resource.data.manualStock is int
