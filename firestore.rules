@@ -349,6 +349,167 @@ service cloud.firestore {
       allow update, delete: if false;
     }
     match /sales/{id} {
+      // 【安全規則】逐項驗算：單價以商品資料庫為準，總額不可只靠前端傳值。
+      // Firestore Rules 沒有迴圈，最多驗證 12 組；前端限制不同主商品 8 種以控制 get() 次數。
+      function extraAmount(extras, idx) {
+        return idx < extras.size() ? extras[idx].price * extras[idx].qty : 0;
+      }
+      function validExtraAt(extras, idx) {
+        return idx >= extras.size() || (
+          extras[idx] is map
+          && extras[idx].id is string
+          && extras[idx].qty is int && extras[idx].qty >= 1 && extras[idx].qty <= 10000
+          && extras[idx].price is int && extras[idx].price >= 0 && extras[idx].price <= 10000000
+          && extras[idx].netAmount is int && extras[idx].netAmount >= 0
+          && extras[idx].netAmount <= extras[idx].price * extras[idx].qty
+        );
+      }
+      function validExtras(extras) {
+        return extras is list && extras.size() <= 12 && (
+          validExtraAt(extras, 0) &&
+      validExtraAt(extras, 1) &&
+      validExtraAt(extras, 2) &&
+      validExtraAt(extras, 3) &&
+      validExtraAt(extras, 4) &&
+      validExtraAt(extras, 5) &&
+      validExtraAt(extras, 6) &&
+      validExtraAt(extras, 7) &&
+      validExtraAt(extras, 8) &&
+      validExtraAt(extras, 9) &&
+      validExtraAt(extras, 10) &&
+      validExtraAt(extras, 11)
+        );
+      }
+      function extrasTotal(extras) {
+        return extraAmount(extras, 0) +
+      extraAmount(extras, 1) +
+      extraAmount(extras, 2) +
+      extraAmount(extras, 3) +
+      extraAmount(extras, 4) +
+      extraAmount(extras, 5) +
+      extraAmount(extras, 6) +
+      extraAmount(extras, 7) +
+      extraAmount(extras, 8) +
+      extraAmount(extras, 9) +
+      extraAmount(extras, 10) +
+      extraAmount(extras, 11);
+      }
+      function validSaleLineAt(lines, idx) {
+        return idx >= lines.size() || validSaleLine(lines[idx]);
+      }
+      function validSaleLine(line) {
+        return line is map
+          && line.productId is string && line.qty is int && line.qty >= 1 && line.qty <= 10000
+          && line.price is int && line.price >= 0 && line.price <= 10000000
+          && line.gross is int && line.gross == line.price * line.qty
+          && validExtras(line.extras)
+          && line.addonTotal is int && line.addonTotal == extrasTotal(line.extras)
+          && line.promoDiscount is int && line.promoDiscount >= 0
+          && line.manualDiscount is int && line.manualDiscount >= 0
+          && line.discount is int && line.discount == line.promoDiscount + line.manualDiscount
+          && line.discount <= line.gross + line.addonTotal
+          && line.lineTotal is int && line.lineTotal >= 0
+          && line.lineTotal == line.gross + line.addonTotal - line.discount
+          && (line.productId == '__manual_other__'
+              ? (line.qty == 1 && line.category == '其它' && line.name is string
+                 && line.name.size() > 0 && line.name.size() <= 60
+                 && line.reason is string && line.reason.size() > 0 && line.reason.size() <= 160
+                 && line.extras.size() == 0)
+              : validCatalogPrice(line));
+      }
+      function validCatalogPrice(line) {
+        let product = get(/databases/$(database)/documents/products/$(line.productId)).data;
+        return product.price == line.price
+          && product.name == line.name
+          && product.category == line.category
+          && product.unit == line.unit
+          && product.get('hidden', false) != true;
+      }
+      function saleLineNet(lines, idx) {
+        return idx < lines.size() ? lines[idx].lineTotal : 0;
+      }
+      function saleLineBase(lines, idx) {
+        return idx < lines.size() ? lines[idx].gross + lines[idx].addonTotal - lines[idx].promoDiscount : 0;
+      }
+      function saleLineManual(lines, idx) {
+        return idx < lines.size() ? lines[idx].manualDiscount : 0;
+      }
+      function saleLinePromo(lines, idx) {
+        return idx < lines.size() ? lines[idx].promoDiscount : 0;
+      }
+      function consistentSaleAmounts(data) {
+        return (
+          validSaleLineAt(data.lines, 0) &&
+          validSaleLineAt(data.lines, 1) &&
+          validSaleLineAt(data.lines, 2) &&
+          validSaleLineAt(data.lines, 3) &&
+          validSaleLineAt(data.lines, 4) &&
+          validSaleLineAt(data.lines, 5) &&
+          validSaleLineAt(data.lines, 6) &&
+          validSaleLineAt(data.lines, 7) &&
+          validSaleLineAt(data.lines, 8) &&
+          validSaleLineAt(data.lines, 9) &&
+          validSaleLineAt(data.lines, 10) &&
+          validSaleLineAt(data.lines, 11)
+        )
+        && data.total == (
+          saleLineNet(data.lines, 0) +
+          saleLineNet(data.lines, 1) +
+          saleLineNet(data.lines, 2) +
+          saleLineNet(data.lines, 3) +
+          saleLineNet(data.lines, 4) +
+          saleLineNet(data.lines, 5) +
+          saleLineNet(data.lines, 6) +
+          saleLineNet(data.lines, 7) +
+          saleLineNet(data.lines, 8) +
+          saleLineNet(data.lines, 9) +
+          saleLineNet(data.lines, 10) +
+          saleLineNet(data.lines, 11)
+        )
+        && data.baseTotal == (
+          saleLineBase(data.lines, 0) +
+          saleLineBase(data.lines, 1) +
+          saleLineBase(data.lines, 2) +
+          saleLineBase(data.lines, 3) +
+          saleLineBase(data.lines, 4) +
+          saleLineBase(data.lines, 5) +
+          saleLineBase(data.lines, 6) +
+          saleLineBase(data.lines, 7) +
+          saleLineBase(data.lines, 8) +
+          saleLineBase(data.lines, 9) +
+          saleLineBase(data.lines, 10) +
+          saleLineBase(data.lines, 11)
+        )
+        && data.manualDiscount == (
+          saleLineManual(data.lines, 0) +
+          saleLineManual(data.lines, 1) +
+          saleLineManual(data.lines, 2) +
+          saleLineManual(data.lines, 3) +
+          saleLineManual(data.lines, 4) +
+          saleLineManual(data.lines, 5) +
+          saleLineManual(data.lines, 6) +
+          saleLineManual(data.lines, 7) +
+          saleLineManual(data.lines, 8) +
+          saleLineManual(data.lines, 9) +
+          saleLineManual(data.lines, 10) +
+          saleLineManual(data.lines, 11)
+        )
+        && data.promoDiscount is int && data.promoDiscount == (
+          saleLinePromo(data.lines, 0) +
+          saleLinePromo(data.lines, 1) +
+          saleLinePromo(data.lines, 2) +
+          saleLinePromo(data.lines, 3) +
+          saleLinePromo(data.lines, 4) +
+          saleLinePromo(data.lines, 5) +
+          saleLinePromo(data.lines, 6) +
+          saleLinePromo(data.lines, 7) +
+          saleLinePromo(data.lines, 8) +
+          saleLinePromo(data.lines, 9) +
+          saleLinePromo(data.lines, 10) +
+          saleLinePromo(data.lines, 11)
+        )
+        && data.discount is int && data.discount == data.promoDiscount + data.manualDiscount;
+      }
       allow read: if member();
       allow create: if member()
         && request.resource.data.actorUid == request.auth.uid
@@ -357,7 +518,7 @@ service cloud.firestore {
         && request.resource.data.hidden == false
         && request.resource.data.lines is list
         && request.resource.data.lines.size() > 0
-        && request.resource.data.lines.size() <= 4
+        && request.resource.data.lines.size() <= 12
         && request.resource.data.needs is map
         && request.resource.data.rollNeeds is map
         && request.resource.data.productDeltas is map
@@ -379,6 +540,7 @@ service cloud.firestore {
         && request.resource.data.paid is int
         && request.resource.data.paid >= request.resource.data.total
         && request.resource.data.change == request.resource.data.paid - request.resource.data.total
+        && consistentSaleAmounts(request.resource.data)
         && (!('orderNo' in request.resource.data) || (
              request.resource.data.orderNo is string
              && request.resource.data.orderNo.matches('^GD-[0-9]{8}-[0-9]{4,}$')
