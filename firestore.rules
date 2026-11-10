@@ -44,11 +44,11 @@ service cloud.firestore {
     }
     match /meta/{id} {
       allow read: if member();
-      allow create, update: if (manager() && id == 'settings'
+      allow create, update: if manager() && id == 'settings'
         && request.resource.data.sharedCost is int
         && request.resource.data.sharedCost >= 0
         && request.resource.data.stallName is string
-        && request.resource.data.stallName.size() <= 45);
+        && request.resource.data.stallName.size() <= 45;
       allow delete: if false;
     }
     match /promotions/{id} {
@@ -62,7 +62,7 @@ service cloud.firestore {
         && request.resource.data.price <= 10000000;
       allow update, delete: if false;
     }
-    // Public menu is a manager-published projection: NEVER expose /products costs and recipes.
+    // 新版新增的公開菜單：保留原有成本資料隱私。
     match /menuPublic/{id} {
       allow read: if true;
       allow create, update: if manager()
@@ -84,23 +84,12 @@ service cloud.firestore {
         && request.resource.data.hidden == getAfter(/databases/$(database)/documents/products/$(id)).data.get('hidden',false);
       allow delete: if false;
     }
-    // 舊版 QR 訂單唯讀存檔：僅登入成員可核對，禁止再建立或修改。
+    // 舊顧客 QR 訂單只允許查詢，禁止再新增或更新。
     match /customerOrders/{id} {
       allow get: if member();
       allow list, create, update, delete: if false;
     }
     match /products/{id} {
-      function linkedSaleProductChange() {
-        let sale = getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data;
-        return sale.actorUid == request.auth.uid
-          && sale.createdAt == request.time && sale.status == 'valid'
-          && sale.productDeltas[id].sold == request.resource.data.sold - resource.data.get('sold', 0)
-          && sale.productDeltas[id].revenue == request.resource.data.revenue - resource.data.get('revenue', 0);
-      }
-      function linkedRollQty() {
-        let sale = getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data;
-        return resource.data.get('manualStock',0) - request.resource.data.manualStock == sale.productDeltas[id].rollQty;
-      }
       allow read: if member();
       allow create: if manager()
         && request.resource.data.sold == 0
@@ -164,16 +153,17 @@ service cloud.firestore {
           ])
           && request.resource.data.updatedAt == request.time
           && request.resource.data.sold is int
-          && resource.data.get('sold', 0) is int
-          && resource.data.get('revenue', 0) is int
-          && request.resource.data.sold > resource.data.get('sold', 0)
+          && request.resource.data.sold > resource.data.sold
           && request.resource.data.revenue is int
-          && request.resource.data.revenue >= resource.data.get('revenue', 0)
-          && linkedSaleProductChange()
+          && request.resource.data.revenue >= resource.data.revenue
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.status == 'valid'
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].sold == request.resource.data.sold - resource.data.sold
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].revenue == request.resource.data.revenue - resource.data.revenue
           && ((resource.data.category in ['飯捲','飯卷','飯糰']
             && request.resource.data.manualStock is int
             && request.resource.data.manualStock >= 0
-            && linkedRollQty())
+            && resource.data.get('manualStock',0) - request.resource.data.manualStock == getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].rollQty)
            || (resource.data.category in ['冰淇淋','冰品']
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['manualStock']))))
         || (member()
@@ -228,12 +218,6 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /ingredients/{id} {
-      function linkedSaleIngredientChange() {
-        let sale = getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data;
-        return sale.actorUid == request.auth.uid
-          && sale.createdAt == request.time && sale.status == 'valid'
-          && sale.needs[id] == request.resource.data.usedQty - resource.data.usedQty;
-      }
       allow read: if member();
       allow create: if manager()
         && request.resource.data.name is string
@@ -282,8 +266,9 @@ service cloud.firestore {
           && request.resource.data.usedQty is int
           && request.resource.data.usedQty > resource.data.usedQty
           && request.resource.data.usedQty <= resource.data.totalQty
-          && request.resource.data.updatedAt == request.time
-          && linkedSaleIngredientChange())
+          && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId))
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.needs[id] == request.resource.data.usedQty - resource.data.usedQty)
         || (member()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'usedQty','lastRefundId','updatedAt'
@@ -329,39 +314,6 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId)).data.usedQty == get(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId)).data.usedQty + request.resource.data.qty;
       allow update, delete: if false;
     }
-    function orderIngredientUpdated(saleId, sale, idx) {
-      return idx >= sale.needs.keys().size() || ingredientMatchesSale(saleId, sale, sale.needs.keys()[idx]);
-    }
-    function ingredientMatchesSale(saleId, sale, ingredientId) {
-      let stock = getAfter(/databases/$(database)/documents/ingredients/$(ingredientId)).data;
-      return ingredientId is string
-        && sale.needs[ingredientId] is int
-        && sale.needs[ingredientId] >= 1
-        && stock.lastOrderId == saleId
-        && stock.updatedAt == request.time;
-    }
-    function saleNeedsHaveStockUpdatesData(saleId, sale) {
-      return sale.needs is map && sale.needs.keys().size() <= 8
-        && orderIngredientUpdated(saleId,sale,0) && orderIngredientUpdated(saleId,sale,1)
-        && orderIngredientUpdated(saleId,sale,2) && orderIngredientUpdated(saleId,sale,3)
-        && orderIngredientUpdated(saleId,sale,4) && orderIngredientUpdated(saleId,sale,5)
-        && orderIngredientUpdated(saleId,sale,6) && orderIngredientUpdated(saleId,sale,7);
-    }
-    function saleNeedsHaveStockUpdates(saleId) {
-      let sale = getAfter(/databases/$(database)/documents/sales/$(saleId)).data;
-      return saleNeedsHaveStockUpdatesData(saleId, sale);
-    }
-    // 人工結帳仍由每日流水號更新驗證原料同步扣庫存。
-    function counterStockMatches(data) {
-      return saleNeedsHaveStockUpdates(data.lastOrderId);
-    }
-    function currentCounterSaleMatches(data) {
-      let sale = getAfter(/databases/$(database)/documents/sales/$(data.lastOrderId)).data;
-      return sale.status == 'valid'
-        && sale.actorUid == request.auth.uid
-        && sale.createdAt == request.time
-        && sale.orderNo == data.lastOrderNo;
-    }
     match /orderCounters/{day} {
       allow read: if member();
       allow create: if member()
@@ -371,8 +323,8 @@ service cloud.firestore {
         && request.resource.data.lastOrderId is string
         && request.resource.data.lastOrderNo is string
         && request.resource.data.updatedAt == request.time
-        && currentCounterSaleMatches(request.resource.data)
-        && counterStockMatches(request.resource.data);
+        && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.orderNo == request.resource.data.lastOrderNo;
       allow update: if member()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastNo','lastOrderId','lastOrderNo','updatedAt'])
         && request.resource.data.date == day
@@ -382,8 +334,8 @@ service cloud.firestore {
         && request.resource.data.lastOrderId is string
         && request.resource.data.lastOrderNo is string
         && request.resource.data.updatedAt == request.time
-        && currentCounterSaleMatches(request.resource.data)
-        && counterStockMatches(request.resource.data);
+        && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.orderNo == request.resource.data.lastOrderNo;
       allow delete: if false;
     }
     match /cashCounts/{id} {
@@ -433,7 +385,6 @@ service cloud.firestore {
         return idx >= extras.size() || (
           extras[idx] is map
           && extras[idx].id is string
-          && extras[idx].optionIndex is int && extras[idx].optionIndex >= 0 && extras[idx].optionIndex < 12
           && extras[idx].qty is int && extras[idx].qty >= 1 && extras[idx].qty <= 10000
           && extras[idx].price is int && extras[idx].price >= 0 && extras[idx].price <= 10000000
           && extras[idx].netAmount is int && extras[idx].netAmount >= 0
@@ -493,119 +444,13 @@ service cloud.firestore {
                  && line.extras.size() == 0)
               : validCatalogPrice(line));
       }
-      function recipeNeedMinimum(line, product, idx) {
-        return idx >= product.recipe.size() || (
-          product.recipe[idx].id in request.resource.data.needs
-          && request.resource.data.needs[product.recipe[idx].id] is int
-          && request.resource.data.needs[product.recipe[idx].id] >= product.recipe[idx].qty * line.qty
-        );
-      }
-      function catalogRecipeNeedsCovered(line, product) {
-        return product.category in ['飯捲','飯卷','飯糰'] || (
-          product.recipe is list && product.recipe.size() > 0 && product.recipe.size() <= 12
-          && recipeNeedMinimum(line,product,0) && recipeNeedMinimum(line,product,1)
-          && recipeNeedMinimum(line,product,2) && recipeNeedMinimum(line,product,3)
-          && recipeNeedMinimum(line,product,4) && recipeNeedMinimum(line,product,5)
-          && recipeNeedMinimum(line,product,6) && recipeNeedMinimum(line,product,7)
-          && recipeNeedMinimum(line,product,8) && recipeNeedMinimum(line,product,9)
-          && recipeNeedMinimum(line,product,10) && recipeNeedMinimum(line,product,11)
-        );
-      }
-      function catalogAddonAt(extras, idx, product) {
-        return idx >= extras.size() || catalogAddonMatches(extras[idx], product);
-      }
-      function catalogAddonMatches(extra, product) {
-        return product.category in ['飯捲','飯卷','飯糰']
-          ? rollAddonMatches(extra, product)
-          : iceAddonMatches(extra, product);
-      }
-      function iceAddonMatches(extra, product) {
-        let options = product.get('addonOptions', []);
-        return options is list && extra.optionIndex < options.size()
-          && options[extra.optionIndex].id == extra.id
-          && options[extra.optionIndex].price == extra.price
-          // Ice-cream add-on must also appear in the stock-needs map.
-          && extra.id in request.resource.data.needs
-          && request.resource.data.needs[extra.id] >= extra.qty;
-      }
-      function rollAddonMatches(extra, product) {
-        let options = product.get('rollAddonOptions', []);
-        let material = getAfter(/databases/$(database)/documents/rollIngredients/$(extra.id)).data;
-        return material.get('hidden', false) == false
-          && (options.size() > 0
-            ? (extra.optionIndex < options.size()
-               && options[extra.optionIndex].id == extra.id
-               && options[extra.optionIndex].price == extra.price)
-            : material.defaultPrice == extra.price);
-      }
-      function catalogAddonsMatch(extras, product) {
-        return catalogAddonAt(extras,0,product) && catalogAddonAt(extras,1,product)
-          && catalogAddonAt(extras,2,product) && catalogAddonAt(extras,3,product)
-          && catalogAddonAt(extras,4,product) && catalogAddonAt(extras,5,product)
-          && catalogAddonAt(extras,6,product) && catalogAddonAt(extras,7,product)
-          && catalogAddonAt(extras,8,product) && catalogAddonAt(extras,9,product)
-          && catalogAddonAt(extras,10,product) && catalogAddonAt(extras,11,product);
-      }
       function validCatalogPrice(line) {
-        // Read the existing catalog price; post-transaction stock changes are validated in /products and /ingredients.
         let product = get(/databases/$(database)/documents/products/$(line.productId)).data;
-        return catalogAddonsMatch(line.extras, product)
-          && catalogRecipeNeedsCovered(line, product)
-          && line.productId in request.resource.data.productDeltas
-          && (product.category in ['飯捲','飯卷','飯糰']
-              ? (line.productId in request.resource.data.rollNeeds
-                 && request.resource.data.rollNeeds[line.productId] >= line.qty)
-              : !(line.productId in request.resource.data.rollNeeds))
-          && product.price == line.price
+        return product.price == line.price
           && product.name == line.name
           && product.category == line.category
           && product.unit == line.unit
           && product.get('hidden', false) != true;
-      }
-      function sumSold(lines, productId, idx) {
-        return idx < lines.size() && lines[idx].productId == productId ? lines[idx].qty : 0;
-      }
-      function sumRevenue(lines, productId, idx) {
-        return idx < lines.size() && lines[idx].productId == productId ? lines[idx].lineTotal : 0;
-      }
-      function deltaProductMatches(data, idx) {
-        return idx >= data.productDeltas.keys().size() || deltaProductMatchesId(data, data.productDeltas.keys()[idx]);
-      }
-      function deltaProductMatchesId(data, productId) {
-        return productId is string
-          && data.productDeltas[productId] is map
-          && data.productDeltas[productId].sold is int
-          && data.productDeltas[productId].sold > 0
-          && data.productDeltas[productId].revenue is int
-          && data.productDeltas[productId].revenue >= 0
-          && data.productDeltas[productId].rollQty is int
-          && (productId in data.rollNeeds
-              ? data.rollNeeds[productId] == data.productDeltas[productId].rollQty
-              : data.productDeltas[productId].rollQty == 0)
-          && data.productDeltas[productId].sold == (
-            sumSold(data.lines,productId,0) + sumSold(data.lines,productId,1)
-            + sumSold(data.lines,productId,2) + sumSold(data.lines,productId,3)
-            + sumSold(data.lines,productId,4) + sumSold(data.lines,productId,5)
-            + sumSold(data.lines,productId,6) + sumSold(data.lines,productId,7)
-            + sumSold(data.lines,productId,8) + sumSold(data.lines,productId,9)
-            + sumSold(data.lines,productId,10) + sumSold(data.lines,productId,11)
-          )
-          && data.productDeltas[productId].revenue == (
-            sumRevenue(data.lines,productId,0) + sumRevenue(data.lines,productId,1)
-            + sumRevenue(data.lines,productId,2) + sumRevenue(data.lines,productId,3)
-            + sumRevenue(data.lines,productId,4) + sumRevenue(data.lines,productId,5)
-            + sumRevenue(data.lines,productId,6) + sumRevenue(data.lines,productId,7)
-            + sumRevenue(data.lines,productId,8) + sumRevenue(data.lines,productId,9)
-            + sumRevenue(data.lines,productId,10) + sumRevenue(data.lines,productId,11)
-          );
-      }
-      function allProductDeltasMatch(data) {
-        return data.productDeltas.keys().size() <= 8
-          && data.rollNeeds.keys().hasOnly(data.productDeltas.keys())
-          && deltaProductMatches(data,0) && deltaProductMatches(data,1)
-          && deltaProductMatches(data,2) && deltaProductMatches(data,3)
-          && deltaProductMatches(data,4) && deltaProductMatches(data,5)
-          && deltaProductMatches(data,6) && deltaProductMatches(data,7);
       }
       function saleLineNet(lines, idx) {
         return idx < lines.size() ? lines[idx].lineTotal : 0;
@@ -692,16 +537,9 @@ service cloud.firestore {
         )
         && data.discount is int && data.discount == data.promoDiscount + data.manualDiscount;
       }
-      function counterMatches(sale) {
-        let counter = getAfter(/databases/$(database)/documents/orderCounters/$(sale.orderDay)).data;
-        return counter.lastOrderId == id
-          && counter.lastNo == sale.orderSequence
-          && counter.lastOrderNo == sale.orderNo;
-      }
       allow read: if member();
       allow create: if member()
         && request.resource.data.actorUid == request.auth.uid
-        && !('customerOrderId' in request.resource.data)
         && request.resource.data.status == 'valid'
         && request.resource.data.createdAt == request.time
         && request.resource.data.hidden == false
@@ -711,8 +549,6 @@ service cloud.firestore {
         && request.resource.data.needs is map
         && request.resource.data.rollNeeds is map
         && request.resource.data.productDeltas is map
-        // One account + one counter + optional customer + distinct product docs;
-        // roll-addon docs are checked above by catalogAddonsMatch.
         && request.resource.data.manualDiscount is int
         && request.resource.data.baseTotal is int
         && request.resource.data.baseTotal >= 0
@@ -731,18 +567,17 @@ service cloud.firestore {
         && request.resource.data.paid is int
         && request.resource.data.paid >= request.resource.data.total
         && request.resource.data.change == request.resource.data.paid - request.resource.data.total
-        // Delta values are checked against every sale line without re-reading all product documents.
-        // The product writes validate the delta against the real post-transaction stock documents.
-        && allProductDeltasMatch(request.resource.data)
-        // Ingredient writes are verified in the daily counter's rule (a separate write operation)
-        // to avoid exceeding the ten-access limit for a single sale document.
         && consistentSaleAmounts(request.resource.data)
-        && request.resource.data.orderNo is string
-        && request.resource.data.orderNo.matches('^GD-[0-9]{8}-[0-9]{4,}$')
-        && request.resource.data.orderDay is string
-        && request.resource.data.orderSequence is int
-        && request.resource.data.orderSequence >= 1
-        && counterMatches(request.resource.data);
+        && (!('orderNo' in request.resource.data) || (
+             request.resource.data.orderNo is string
+             && request.resource.data.orderNo.matches('^GD-[0-9]{8}-[0-9]{4,}$')
+             && request.resource.data.orderDay is string
+             && request.resource.data.orderSequence is int
+             && request.resource.data.orderSequence >= 1
+             && getAfter(/databases/$(database)/documents/orderCounters/$(request.resource.data.orderDay)).data.lastOrderId == id
+             && getAfter(/databases/$(database)/documents/orderCounters/$(request.resource.data.orderDay)).data.lastNo == request.resource.data.orderSequence
+             && getAfter(/databases/$(database)/documents/orderCounters/$(request.resource.data.orderDay)).data.lastOrderNo == request.resource.data.orderNo
+           ));
       allow update: if (superAdmin()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'status','refundReason','refundedByUid','refundedBySeat','refundedByName','refundedAt',
