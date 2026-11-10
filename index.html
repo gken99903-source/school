@@ -506,6 +506,7 @@ function askSiteConfirm(message,opts={}){
 /* 【功能區 JS-03】操作人員資訊、26 號及管理員權限判斷 */
 function actor(){return (seatOf(state.user)===0?'00':String(seatOf(state.user)))+(state.name?'（'+state.name+'）':'')+' 號'}
 function isSuper(){return seatOf(state.user)===26}function isManager(){return isSuper()||['teacher','admin'].includes(state.role)}
+function canDeleteCatalog(){return isSuper()||state.role==='admin'}
 
 
 /* 【功能區 JS-04】暫存訂單：本機儲存、保存、恢復、刪除 */
@@ -1264,9 +1265,9 @@ function refundOperatorName(s){
 }
 function renderSales(){const shownSales=salesFilterResults().sort((a,b)=>saleEpoch(b,'createdAt')-saleEpoch(a,'createdAt')||String(b.id).localeCompare(String(a.id))),count=shownSales.length;$('salesResultCount').textContent='顯示 '+count+' / '+state.sales.filter(s=>!s.hidden).length+' 筆交易';$('salesList').innerHTML=(state.refundUnconfirmedId?'<div class="listrow"><b>上一筆退款結果尚未核對</b><div class="hint">訂單 '+esc(state.refundUnconfirmedId)+' · 不要再次退還現金</div><button type="button" class="secondary" data-review-refund>向 Firebase 核對退款</button></div>':'')+shownSales.map(s=>'<div class="listrow"><div class="row"><div><b>'+money(s.total)+'</b>　<span class="tag">'+(s.status==='valid'?'已完成':'已退款')+'</span><div class="hint">'+esc(orderDisplay(s))+'</div><div class="muted">'+esc((s.lines||[]).map(saleLineDescription).join('、'))+'</div><div class="hint">'+(s.createdAt?.toDate?.().toLocaleString('zh-TW')||'同步中')+' · 原收銀人：'+esc(s.actorName||'未記錄')+'</div>'+(s.status==='voided'?'<div class="hint">退款操作人：'+esc(refundOperatorName(s))+(s.refundedAt?.toDate?.()?(' · '+esc(s.refundedAt.toDate().toLocaleString('zh-TW'))):'')+'</div>':'')+(s.manualDiscount?'<div class="hint">人工優惠 '+money(s.manualDiscount)+'；原因：'+esc(s.manualReason||'未填')+'</div>':'')+(s.refundReason?'<div class="hint">退款原因：'+esc(s.refundReason)+'</div>':'')+'</div><div class="buttons">'+(s.status==='valid'?'<button class="secondary" data-refund="'+esc(s.id)+'">退款</button>':'')+'<button type="button" class="secondary" data-receipt="'+esc(s.id)+'">電子收據</button>'+(isSuper()?'<button class="danger" data-remove-sale="'+esc(s.id)+'">刪除紀錄</button>':'')+'</div></div></div>').join('')||'<div class="empty">沒有交易紀錄</div>'}
 function renderAudit(){$('auditList').innerHTML=state.audit.filter(a=>!a.hidden).map(a=>'<div class="listrow"><div class="row"><div><b>'+esc(a.actorName||a.seat)+'</b> · '+esc(a.summary)+'<div class="hint">'+(a.createdAt?.toDate?.().toLocaleString('zh-TW')||'同步中')+'</div></div>'+(isSuper()?'<button class="danger" data-remove-audit="'+esc(a.id)+'">刪除紀錄</button>':'')+'</div></div>').join('')||'<div class="empty">沒有操作紀錄</div>'}
-function renderIngredients(){$('ingredientList').innerHTML=state.ingredients.map(i=>'<div class="row listrow"><div><b>'+esc(i.name)+'</b> <span class="tag">剩 '+remaining(i.id)+' '+esc(i.unit)+'</span><div class="hint">進貨 '+i.totalQty+' · 已用 '+i.usedQty+'（毀損 '+Number(i.damagedQty||0)+'） · 成本 '+money(i.unitCost)+'</div></div><button class="secondary" data-edit-ingredient="'+esc(i.id)+'">編輯</button></div>').join('')||'<div class="empty">尚無原料</div>'}
+function renderIngredients(){$('ingredientList').innerHTML=state.ingredients.map(i=>'<div class="row listrow"><div><b>'+esc(i.name)+'</b> <span class="tag">剩 '+remaining(i.id)+' '+esc(i.unit)+'</span><div class="hint">進貨 '+i.totalQty+' · 已用 '+i.usedQty+'（毀損 '+Number(i.damagedQty||0)+'） · 成本 '+money(i.unitCost)+'</div></div><div class="buttons"><button type="button" class="secondary" data-edit-ingredient="'+esc(i.id)+'">編輯</button>'+(canDeleteCatalog()?'<button type="button" class="danger" data-delete-ingredient="'+esc(i.id)+'">刪除</button>':'')+'</div></div>').join('')||'<div class="empty">尚無原料</div>'}
 function renderRollMaterials(){
- $('rollMaterialList').innerHTML=state.rollMaterials.length?state.rollMaterials.map(m=>'<div class="row listrow"><div><b>'+esc(m.name)+'</b> <span class="tag">'+(m.hidden?'已停用':'可加購')+'</span><div class="hint">每 '+esc(m.unit)+' 加購 '+money(m.defaultPrice)+' · 原料成本 '+money(m.unitCost)+'</div></div><button type="button" class="secondary" data-edit-roll-material="'+esc(m.id)+'">編輯</button></div>').join(''):'<div class="empty">尚無飯捲加購原料</div>';
+ $('rollMaterialList').innerHTML=state.rollMaterials.length?state.rollMaterials.map(m=>'<div class="row listrow"><div><b>'+esc(m.name)+'</b> <span class="tag">'+(m.hidden?'已停用':'可加購')+'</span><div class="hint">每 '+esc(m.unit)+' 加購 '+money(m.defaultPrice)+' · 原料成本 '+money(m.unitCost)+'</div></div><div class="buttons"><button type="button" class="secondary" data-edit-roll-material="'+esc(m.id)+'">編輯</button>'+(canDeleteCatalog()?'<button type="button" class="danger" data-delete-roll-material="'+esc(m.id)+'">刪除</button>':'')+'</div></div>').join(''):'<div class="empty">尚無飯捲加購原料</div>';
 }
 function openRollMaterial(id=null){
  const x=state.rollMaterials.find(m=>m.id===id);state.editRollMaterial=id;
@@ -1285,7 +1286,68 @@ async function saveRollMaterial(e){
  try{await logged('roll.ingredient.save',name,ref.id)}catch(err){toast('原料已儲存，但日誌未寫入：'+err.message,true)}
  }catch(err){toast('儲存飯捲原料失敗：'+err.message,true)}finally{state.busy=false}
 }
-function renderAdmin(){renderIngredients();renderRollMaterials();$('productAdminList').innerHTML=state.products.map(p=>'<div class="row listrow"><div><b>'+esc(p.name)+'</b> · '+esc(p.category)+'<div class="hint">'+money(p.price)+' / '+esc(p.unit)+' · 已售 '+(p.sold||0)+'</div></div><button class="secondary" data-edit-product="'+esc(p.id)+'">編輯</button></div>').join('')||'<div class="empty">尚無商品</div>';const options=state.products.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');const a=$('promoA').value,b=$('promoB').value;$('promoA').innerHTML=options;$('promoB').innerHTML=options;if(state.products.some(p=>p.id===a))$('promoA').value=a;if(state.products.some(p=>p.id===b))$('promoB').value=b;$('promoList').innerHTML=state.promos.map(p=>'<div class="listrow">'+esc(state.products.find(x=>x.id===p.productA)?.name||'商品 A')+' + '+esc(state.products.find(x=>x.id===p.productB)?.name||'商品 B')+'：B 加購 '+money(p.price??p.value)+'</div>').join('');$('accountsList').innerHTML=state.accounts.map(a=>'<div class="row listrow"><span>'+a.seat+' 號 · '+esc(a.name||'')+'</span><select data-role-uid="'+esc(a.id)+'"><option value="student" '+(a.role==='student'?'selected':'')+'>學生</option><option value="teacher" '+(a.role==='teacher'?'selected':'')+'>老師</option><option value="admin" '+(a.role==='admin'?'selected':'')+'>管理員</option></select></div>').join('')}
+/* 【功能區 JS-20a】管理員刪除商品／原料：保留交易紀錄、二次確認與關聯檢查 */
+async function deleteCatalogEntry(kind,id){
+ if(!canDeleteCatalog()||!state.user){toast('只有管理員或 26 號可以刪除商品與原料',true);return;}
+ if(state.busy){toast('目前有其他操作進行中，請完成後再刪除',true);return;}
+ const config={
+  products:{label:'販售商品',records:state.products},
+  ingredients:{label:'冰淇淋原料',records:state.ingredients},
+  rollIngredients:{label:'飯捲加購原料',records:state.rollMaterials}
+ }[kind];
+ if(!config||typeof id!=='string'||!config.records.some(x=>x.id===id)){toast('找不到指定品項，請重新整理',true);return;}
+ const item=config.records.find(x=>x.id===id),name=item.name||id;
+ // 不能刪除仍在目前收銀單或本機待核對交易內的商品、配料。
+ const usedByOrder=lines=>(lines||[]).some(x=>kind==='products'?x.productId===id:(x.extras||[]).some(e=>e.id===id));
+ if(usedByOrder(state.cart)||usedByOrder(readPendingReceipt()?.items)||readHeldOrders().some(h=>usedByOrder(h.items))){
+  toast('「'+name+'」仍在目前清單、暫存單或未回傳訂單中；請先完成核對及清單處理',true);return;
+ }
+ if(kind==='products'&&(Number(item.sold||0)!==0||Number(item.revenue||0)!==0)){
+  toast('此商品已有銷售統計，不能直接刪除，避免影響退款或歷史交易',true);return;
+ }
+ if(kind==='ingredients'&&(Number(item.usedQty||0)!==0||Number(item.damagedQty||0)!==0)){
+  toast('此原料已有使用或毀損紀錄，不能直接刪除，避免破壞歷史紀錄',true);return;
+ }
+ const warning=kind==='products'?'公開菜單中對應的商品也會同步移除。':'如果有其他商品使用此原料，必須先到商品設定解除配方或加購關聯。';
+ const ok=await askSiteConfirm('確定永久刪除「'+name+'」（'+config.label+'）？\n'+warning+'\n此操作不可還原，不會刪除既有銷售紀錄。',{title:'永久刪除'+config.label,phrase:'刪除'});
+ if(!ok)return;
+ if(!canDeleteCatalog()||state.busy)return;
+ state.busy=true;
+ try{
+  if(kind!=='products'){
+   // 從伺服器取得現有商品，而非只依賴本機快取判斷配方是否仍在使用。
+   const currentProducts=await getDocsFromServer(collection(db,'products'));
+   const linked=currentProducts.docs.find(p=>{
+    const d=p.data();
+    return kind==='ingredients'
+      ?[...(d.recipe||[]),...(d.addonOptions||[])].some(e=>e.id===id)
+      :(d.rollAddonOptions||[]).some(e=>e.id===id);
+   });
+   if(linked)throw Error('「'+(linked.data().name||linked.id)+'」目前仍引用這項原料，請先編輯該商品移除關聯');
+  }
+  const entryRef=doc(db,kind,id),menuRef=kind==='products'?doc(db,'menuPublic',id):null;
+  const auditRef=doc(collection(db,'audit'));
+  await runTransaction(db,async tx=>{
+   const old=await tx.get(entryRef);
+   if(!old.exists())throw Error('該資料已被其他管理員刪除，請重新整理');
+   const data=old.data();
+   if(kind==='products'&&(Number(data.sold??0)!==0||Number(data.revenue??0)!==0))throw Error('商品已有銷售紀錄，禁止直接刪除');
+   if(kind==='ingredients'&&(Number(data.usedQty??0)!==0||Number(data.damagedQty??0)!==0))throw Error('原料已有用量或毀損紀錄，禁止直接刪除');
+   const menuSnap=menuRef?await tx.get(menuRef):null;
+   tx.delete(entryRef);
+   if(menuSnap?.exists())tx.delete(menuRef);
+   tx.set(auditRef,{
+    action:'catalog.delete',summary:('刪除'+config.label+'：'+name+'（'+id+'）').slice(0,280),
+    subjectId:id,actorUid:state.user.uid,actorName:actor(),seat:seatOf(state.user),
+    createdAt:serverTimestamp(),hidden:false
+   });
+  });
+  toast('已刪除「'+name+'」，操作已記錄；其餘資料未修改');
+ }catch(err){toast('刪除失敗：'+err.message,true);}
+ finally{state.busy=false;}
+}
+
+function renderAdmin(){renderIngredients();renderRollMaterials();$('productAdminList').innerHTML=state.products.map(p=>'<div class="row listrow"><div><b>'+esc(p.name)+'</b> · '+esc(p.category)+'<div class="hint">'+money(p.price)+' / '+esc(p.unit)+' · 已售 '+(p.sold||0)+'</div></div><div class="buttons"><button type="button" class="secondary" data-edit-product="'+esc(p.id)+'">編輯</button>'+(canDeleteCatalog()?'<button type="button" class="danger" data-delete-product="'+esc(p.id)+'">刪除</button>':'')+'</div></div>').join('')||'<div class="empty">尚無商品</div>';const options=state.products.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');const a=$('promoA').value,b=$('promoB').value;$('promoA').innerHTML=options;$('promoB').innerHTML=options;if(state.products.some(p=>p.id===a))$('promoA').value=a;if(state.products.some(p=>p.id===b))$('promoB').value=b;$('promoList').innerHTML=state.promos.map(p=>'<div class="listrow">'+esc(state.products.find(x=>x.id===p.productA)?.name||'商品 A')+' + '+esc(state.products.find(x=>x.id===p.productB)?.name||'商品 B')+'：B 加購 '+money(p.price??p.value)+'</div>').join('');$('accountsList').innerHTML=state.accounts.map(a=>'<div class="row listrow"><span>'+a.seat+' 號 · '+esc(a.name||'')+'</span><select data-role-uid="'+esc(a.id)+'"><option value="student" '+(a.role==='student'?'selected':'')+'>學生</option><option value="teacher" '+(a.role==='teacher'?'selected':'')+'>老師</option><option value="admin" '+(a.role==='admin'?'selected':'')+'>管理員</option></select></div>').join('')}
 function renderCartBar(){let c;try{c=summary()}catch(e){c={total:0}}$('cartCount').textContent=state.cart.reduce((n,l)=>n+l.qty,0)+' 份';$('cartTotal').textContent=money(c.total);$('cartBar').classList.toggle('hidden',!state.cart.length||state.tab!=='checkout')}
 function render(){renderStats();renderProducts();renderInventory();renderDamage();renderSales();renderPendingOrders();renderCashCounts();renderHeldOrders();if(isManager()){renderAudit();renderAdmin();renderAlerts();renderMovements()}renderCartBar();renderDisplay()}
 /* 【功能區 JS-18】Firestore 即時監聽：商品、原料、銷售、權限和系統設定 */
@@ -2085,7 +2147,7 @@ document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.c
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tab(b.dataset.tab));$('productSearch').oninput=renderProducts;$('productGrid').onclick=e=>{const plus=e.target.closest('[data-card-plus]'),minus=e.target.closest('[data-card-minus]'),ice=e.target.closest('[data-open-ice]'),tap=e.target.closest('[data-tap]');if(minus)adjustCard(minus.dataset.cardMinus,-1);else if(plus)adjustCard(plus.dataset.cardPlus,1);else if(ice)openIce(ice.dataset.openIce);else if(tap)adjustCard(tap.dataset.tap,1)};$('iceQty').oninput=updateIcePrice;for(const [id,delta] of [['iceQtyMinus',-1],['iceQtyPlus',1]])$(id).onclick=()=>{const el=$('iceQty');const n=Number(el.value);el.value=String(Math.max(1,Math.min(10000,(Number.isSafeInteger(n)?n:1)+delta)));updateIcePrice()};$('iceFlavors').oninput=updateIcePrice;$('iceFlavors').onclick=e=>{const b=e.target.closest('[data-ice-plus],[data-ice-minus]');if(!b)return;const id=b.dataset.icePlus||b.dataset.iceMinus;const el=[...document.querySelectorAll('.ice-ball')].find(x=>x.dataset.flavor===id);if(!el)return;const delta=b.hasAttribute('data-ice-plus')?1:-1;el.value=Math.max(0,Math.min(10000,(Number(el.value)||0)+delta));updateIcePrice()};$('addIceToCart').onclick=()=>{try{saveCustomizedItem()}catch(e){toast(e.message,true)}};
 $('productGrid').addEventListener('click',e=>{if(e.target.closest('#openOther')){$('otherDialog').showModal();}});$('otherForm').onsubmit=addOther;
 $('openCart').onclick=()=>{renderCart();if(state.pendingVerification){toast('請先查核上一筆交易',true);return;}$('cartDialog').showModal()};$('cartLines').onclick=e=>{const plus=e.target.closest('[data-cart-plus]'),minus=e.target.closest('[data-cart-minus]'),edit=e.target.closest('[data-cart-edit]'),b=e.target.closest('[data-remove-cart]');if(edit){const target=state.cart.find(l=>l.key===edit.dataset.cartEdit);if(target&&!isOtherLine(target)){state.customizeReturnCart=true;$('cartDialog').close();openIce(target.productId,target.key)}return;}if(plus)changeCartQty(plus.dataset.cartPlus,1);else if(minus)changeCartQty(minus.dataset.cartMinus,-1);else if(b){state.cart=state.cart.filter(l=>l.key!==b.dataset.removeCart);markCashierCartChanged();render();renderCart()}};$('toConfirm').onclick=showConfirm;$('backCart').onclick=()=>{$('confirmDialog').close();renderCart();$('cartDialog').showModal()};$('exactPaidBtn').onclick=()=>{try{$('paid').value=manualQuote().total;updateChange()}catch(e){toast(e.message,true)}};$('paid').oninput=updateChange;$('manualDiscount').oninput=updateChange;$('manualReason').oninput=updateChange;$('confirmCheckout').onclick=checkout;$('pendingCheck').onclick=checkStoredReceipt;$('verifyAgainBtn').onclick=checkStoredReceipt;
-$('openDamage').onclick=openDamage;$('damageForm').onsubmit=saveDamage;$('damageIngredient').onchange=updateDamageEstimate;$('damageQty').oninput=updateDamageEstimate;$('damageReason').onchange=()=>{$('damageReasonOtherBox').classList.toggle('hidden',$('damageReason').value!=='其他')};$('addIngredient').onclick=()=>openIngredient();$('ingredientForm').onsubmit=saveIngredient;$('ingredientList').onclick=e=>{const b=e.target.closest('[data-edit-ingredient]');if(b)openIngredient(b.dataset.editIngredient)};$('addRollMaterial').onclick=()=>openRollMaterial();$('rollMaterialForm').onsubmit=saveRollMaterial;$('rollMaterialList').onclick=e=>{const b=e.target.closest('[data-edit-roll-material]');if(b)openRollMaterial(b.dataset.editRollMaterial)};$('addProduct').onclick=()=>openProduct();$('addRollProduct').onclick=()=>openProduct(null,'飯捲');$('addRollAddon').onclick=()=>rollAddonRow();$('rollAddonRows').onclick=e=>{const b=e.target.closest('[data-remove-row]');if(b)b.closest('.addon-row').remove()};$('rollInventoryGrid').onclick=e=>{const b=e.target.closest('[data-stock-roll]');if(b)openRollStock(b.dataset.stockRoll)};$('saveStock').onclick=saveRollStock;$('productAdminList').onclick=e=>{const b=e.target.closest('[data-edit-product]');if(b)openProduct(b.dataset.editProduct)};$('productType').onchange=updateType;$('addRecipe').onclick=()=>recipeRow();$('addAddonOption').onclick=()=>addonRow();$('recipeRows').onclick=$('addonOptionRows').onclick=e=>{if(e.target.closest('[data-remove-row]'))e.target.closest('.addon-row').remove()};$('productForm').onsubmit=saveProduct;
+$('openDamage').onclick=openDamage;$('damageForm').onsubmit=saveDamage;$('damageIngredient').onchange=updateDamageEstimate;$('damageQty').oninput=updateDamageEstimate;$('damageReason').onchange=()=>{$('damageReasonOtherBox').classList.toggle('hidden',$('damageReason').value!=='其他')};$('addIngredient').onclick=()=>openIngredient();$('ingredientForm').onsubmit=saveIngredient;$('ingredientList').onclick=e=>{const d=e.target.closest('[data-delete-ingredient]');if(d){void deleteCatalogEntry('ingredients',d.dataset.deleteIngredient);return;}const b=e.target.closest('[data-edit-ingredient]');if(b)openIngredient(b.dataset.editIngredient)};$('addRollMaterial').onclick=()=>openRollMaterial();$('rollMaterialForm').onsubmit=saveRollMaterial;$('rollMaterialList').onclick=e=>{const d=e.target.closest('[data-delete-roll-material]');if(d){void deleteCatalogEntry('rollIngredients',d.dataset.deleteRollMaterial);return;}const b=e.target.closest('[data-edit-roll-material]');if(b)openRollMaterial(b.dataset.editRollMaterial)};$('addProduct').onclick=()=>openProduct();$('addRollProduct').onclick=()=>openProduct(null,'飯捲');$('addRollAddon').onclick=()=>rollAddonRow();$('rollAddonRows').onclick=e=>{const b=e.target.closest('[data-remove-row]');if(b)b.closest('.addon-row').remove()};$('rollInventoryGrid').onclick=e=>{const b=e.target.closest('[data-stock-roll]');if(b)openRollStock(b.dataset.stockRoll)};$('saveStock').onclick=saveRollStock;$('productAdminList').onclick=e=>{const d=e.target.closest('[data-delete-product]');if(d){void deleteCatalogEntry('products',d.dataset.deleteProduct);return;}const b=e.target.closest('[data-edit-product]');if(b)openProduct(b.dataset.editProduct)};$('productType').onchange=updateType;$('addRecipe').onclick=()=>recipeRow();$('addAddonOption').onclick=()=>addonRow();$('recipeRows').onclick=$('addonOptionRows').onclick=e=>{if(e.target.closest('[data-remove-row]'))e.target.closest('.addon-row').remove()};$('productForm').onsubmit=saveProduct;
 $('syncPublicMenuBtn').onclick=async()=>{if(!isManager())return;const ok=await syncPublicMenu(authSessionVersion);if(ok)toast('公開菜單同步已核對');};
 $('saveSettings').onclick=saveSettings;$('promoForm').onsubmit=savePromo;$('createAccountForm').onsubmit=createAccount;
 $('accountsList').onchange=e=>{const x=e.target.closest('[data-role-uid]');if(x)setAccountRole(x.dataset.roleUid,x.value)};$('salesList').onclick=e=>{const a=e.target.closest('[data-refund]'),b=e.target.closest('[data-remove-sale]');if(e.target.closest('[data-review-refund]'))verifyUnconfirmedRefund();else if(a)openRefund(a.dataset.refund);else if(e.target.closest('[data-receipt]')){const s=state.sales.find(x=>x.id===e.target.closest('[data-receipt]').dataset.receipt);if(s)renderReceipt(s)}else if(b)hideRecord('sales',b.dataset.removeSale)};$('auditList').onclick=e=>{const b=e.target.closest('[data-remove-audit]');if(b)hideRecord('audit',b.dataset.removeAudit)};$('confirmRefund').onclick=refund;$('exportSales').onclick=()=>downloadPdf('sales');$('exportAudit').onclick=()=>downloadPdf('audit');$('clearSales').onclick=()=>clearTesting('sales');$('clearAudit').onclick=()=>clearTesting('audit');
