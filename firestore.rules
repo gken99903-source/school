@@ -17,9 +17,6 @@ service cloud.firestore {
     function manager() {
       return superAdmin() || (activeAccount() && get(accountPath()).data.role in ['admin','teacher']);
     }
-    function catalogDeleter() {
-      return superAdmin() || (activeAccount() && get(accountPath()).data.role == 'admin');
-    }
     function auditCheck() {
       return member()
         && request.resource.data.actorUid == request.auth.uid
@@ -64,34 +61,6 @@ service cloud.firestore {
         && request.resource.data.price >= 0
         && request.resource.data.price <= 10000000;
       allow update, delete: if false;
-    }
-    // 新版新增的公開菜單：保留原有成本資料隱私。
-    match /menuPublic/{id} {
-      allow read: if true;
-      allow create, update: if manager()
-        && request.resource.data.keys().hasOnly(['name','category','unit','price','hidden','addons','publishedAt'])
-        && request.resource.data.keys().hasAll(['name','category','unit','price','hidden','publishedAt'])
-        && request.resource.data.publishedAt == request.time
-        && request.resource.data.name is string
-        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
-        && request.resource.data.category is string
-        && request.resource.data.unit is string
-        && request.resource.data.price is int && request.resource.data.price >= 1
-        && request.resource.data.hidden is bool
-        && (!('addons' in request.resource.data) || (request.resource.data.addons is list && request.resource.data.addons.size() <= 12))
-        && existsAfter(/databases/$(database)/documents/products/$(id))
-        && request.resource.data.name == getAfter(/databases/$(database)/documents/products/$(id)).data.name
-        && request.resource.data.category == getAfter(/databases/$(database)/documents/products/$(id)).data.category
-        && request.resource.data.unit == getAfter(/databases/$(database)/documents/products/$(id)).data.unit
-        && request.resource.data.price == getAfter(/databases/$(database)/documents/products/$(id)).data.price
-        && request.resource.data.hidden == getAfter(/databases/$(database)/documents/products/$(id)).data.get('hidden',false);
-      allow delete: if catalogDeleter()
-        && !existsAfter(/databases/$(database)/documents/products/$(id));
-    }
-    // 舊顧客 QR 訂單只允許查詢，禁止再新增或更新。
-    match /customerOrders/{id} {
-      allow get: if member();
-      allow list, create, update, delete: if false;
     }
     match /products/{id} {
       allow read: if member();
@@ -157,15 +126,13 @@ service cloud.firestore {
           ])
           && request.resource.data.updatedAt == request.time
           && request.resource.data.sold is int
-          && request.resource.data.sold > resource.data.get('sold', 0)
+          && request.resource.data.sold > resource.data.sold
           && request.resource.data.revenue is int
-          && request.resource.data.revenue >= resource.data.get('revenue', 0)
-          && resource.data.get('sold', 0) is int
-          && resource.data.get('revenue', 0) is int
+          && request.resource.data.revenue >= resource.data.revenue
           && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
           && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.status == 'valid'
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].sold == request.resource.data.sold - resource.data.get('sold', 0)
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].revenue == request.resource.data.revenue - resource.data.get('revenue', 0)
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].sold == request.resource.data.sold - resource.data.sold
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].revenue == request.resource.data.revenue - resource.data.revenue
           && ((resource.data.category in ['飯捲','飯卷','飯糰']
             && request.resource.data.manualStock is int
             && request.resource.data.manualStock >= 0
@@ -179,24 +146,20 @@ service cloud.firestore {
           && request.resource.data.updatedAt == request.time
           && request.resource.data.sold is int
           && request.resource.data.sold >= 0
-          && request.resource.data.sold < resource.data.get('sold', 0)
+          && request.resource.data.sold < resource.data.sold
           && request.resource.data.revenue is int
           && request.resource.data.revenue >= 0
-          && request.resource.data.revenue <= resource.data.get('revenue', 0)
+          && request.resource.data.revenue <= resource.data.revenue
           && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.status == 'voided'
           && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.refundedByUid == request.auth.uid
           && ((('productDeltas' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)
-            && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].sold == resource.data.get('sold', 0) - request.resource.data.sold
-            && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].revenue == resource.data.get('revenue', 0) - request.resource.data.revenue
+            && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].sold == resource.data.sold - request.resource.data.sold
+            && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].revenue == resource.data.revenue - request.resource.data.revenue
             && ((resource.data.category in ['飯捲','飯卷','飯糰']
               && request.resource.data.get('manualStock',0) - resource.data.get('manualStock',0) == getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].rollQty)
              || !(resource.data.category in ['飯捲','飯卷','飯糰'])))
            || !('productDeltas' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)));
-      allow delete: if catalogDeleter()
-        && resource.data.get('sold',0) == 0
-        && resource.data.get('revenue',0) == 0
-        && (!exists(/databases/$(database)/documents/menuPublic/$(id))
-            || !existsAfter(/databases/$(database)/documents/menuPublic/$(id)));
+      allow delete: if false;
     }
     match /rollIngredients/{id} {
       allow read: if member();
@@ -225,7 +188,7 @@ service cloud.firestore {
         && request.resource.data.unitCost >= 0 && request.resource.data.unitCost <= 10000000
         && request.resource.data.hidden is bool
         && request.resource.data.updatedAt == request.time;
-      allow delete: if catalogDeleter();
+      allow delete: if false;
     }
     match /ingredients/{id} {
       allow read: if member();
@@ -251,7 +214,7 @@ service cloud.firestore {
             'name','unit','totalQty','unitCost','updatedAt'
           ])
           && request.resource.data.totalQty is int
-          && request.resource.data.totalQty >= resource.data.get('usedQty', 0)
+          && request.resource.data.totalQty >= resource.data.usedQty
           && request.resource.data.totalQty <= 10000000)
         || (member()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -259,44 +222,42 @@ service cloud.firestore {
           ])
           && request.resource.data.usedQty is int
           && request.resource.data.damagedQty is int
-          && request.resource.data.usedQty > resource.data.get('usedQty', 0)
+          && request.resource.data.usedQty > resource.data.usedQty
           && request.resource.data.usedQty <= resource.data.totalQty
           && request.resource.data.damagedQty == (('damagedQty' in resource.data) ? resource.data.damagedQty : 0)
-             + request.resource.data.usedQty - resource.data.get('usedQty', 0)
+             + request.resource.data.usedQty - resource.data.usedQty
           && request.resource.data.lastDamageId is string
           && existsAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId))
           && getAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId)).data.ingredientId == id
           && getAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId)).data.actorUid == request.auth.uid
-          && getAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId)).data.qty == request.resource.data.usedQty - resource.data.get('usedQty', 0)
+          && getAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId)).data.qty == request.resource.data.usedQty - resource.data.usedQty
         )
         || (member()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'usedQty','lastOrderId','updatedAt'
           ])
           && request.resource.data.usedQty is int
-          && request.resource.data.usedQty > resource.data.get('usedQty', 0)
+          && request.resource.data.usedQty > resource.data.usedQty
           && request.resource.data.usedQty <= resource.data.totalQty
           && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId))
           && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.needs[id] == request.resource.data.usedQty - resource.data.get('usedQty', 0))
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.needs[id] == request.resource.data.usedQty - resource.data.usedQty)
         || (member()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'usedQty','lastRefundId','updatedAt'
           ])
           && request.resource.data.usedQty is int
           && request.resource.data.usedQty >= 0
-          && request.resource.data.usedQty < resource.data.get('usedQty', 0)
+          && request.resource.data.usedQty < resource.data.usedQty
           && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId))
           && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.refundedByUid == request.auth.uid
           && (
             (('needs' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)
-              && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.needs[id] == resource.data.get('usedQty', 0) - request.resource.data.usedQty)
+              && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.needs[id] == resource.data.usedQty - request.resource.data.usedQty)
             || (('usedIngredients' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)
-              && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.usedIngredients[id] == resource.data.get('usedQty', 0) - request.resource.data.usedQty)
+              && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.usedIngredients[id] == resource.data.usedQty - request.resource.data.usedQty)
           ));
-      allow delete: if catalogDeleter()
-        && resource.data.get('usedQty',0) == 0
-        && resource.data.get('damagedQty',0) == 0;
+      allow delete: if false;
     }
     match /damage/{id} {
       allow read: if member();
