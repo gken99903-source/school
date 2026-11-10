@@ -1183,7 +1183,11 @@ function renderCustomerReceipt(){
  const remain=Math.max(0,Math.ceil((customerExpireTime(order)-Date.now())/1000));
  const status=order.status==='paid'?'✅ 已付款':expired?'⌛ 已逾期（失效）':'⏳ 未付款';
  const date=order.createdAt?.toDate?.().toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})||'伺服器確認中';
- $('customerReceiptContent').innerHTML='<p><strong>訂單碼：'+esc(id)+'</strong></p><div class="row"><b>'+status+'</b><span id="customerRemaining">'+(order.status==='paid'?'付款完成':expired?'請重新點餐':'剩餘 '+Math.floor(remain/60)+' 分 '+remain%60+' 秒')+'</span></div><p class="hint">建立：'+esc(date)+'</p>'+customerOrderLinesText(order.status==='paid'&&Array.isArray(order.finalItems)?order.finalItems:order.items)+'<div class="row"><b>'+(order.status==='paid'?'實際已付 '+money(order.finalTotal):'預估 '+money(order.estimateTotal))+'</b></div><p class="hint">'+(order.status==='paid'?'此筆訂單已完成付款；如有收銀員調整，以上顯示最終核對品項。':'實際應收以收銀員確認的套餐優惠及加購金額為準。送單不代表已付款。')+'</p>';
+ const compactPaid=order.status==='paid'&&!Number.isSafeInteger(order.finalTotal);
+ const displayedItems=order.status==='paid'&&Array.isArray(order.finalItems)?order.finalItems:order.items;
+ const receiptTotal=order.status==='paid'?(compactPaid?'付款完成（最終金額請向收銀員確認）':'實際已付 '+money(order.finalTotal)):'預估 '+money(order.estimateTotal);
+ const paidHint=compactPaid?'原始點餐內容如下。如收銀員曾修改品項或加購，請以櫃台的正式銷售明細為準；預估金額不是實際付款金額。':'此筆訂單已完成付款；如有收銀員調整，以上顯示最終核對品項。';
+ $('customerReceiptContent').innerHTML='<p><strong>訂單碼：'+esc(id)+'</strong></p><div class="row"><b>'+status+'</b><span id="customerRemaining">'+(order.status==='paid'?'付款完成':expired?'請重新點餐':'剩餘 '+Math.floor(remain/60)+' 分 '+remain%60+' 秒')+'</span></div><p class="hint">建立：'+esc(date)+'</p>'+customerOrderLinesText(displayedItems)+'<div class="row"><b>'+receiptTotal+'</b></div><p class="hint">'+(order.status==='paid'?paidHint:'實際應收以收銀員確認的套餐優惠及加購金額為準。送單不代表已付款。')+'</p>';
  if(order.status==='paid'||expired){$('customerQr').replaceChildren();customerRenderedQrId=null;return}
  if(customerRenderedQrId!==id){
   $('customerQr').replaceChildren();customerRenderedQrId=id;
@@ -1477,13 +1481,19 @@ function rawOrder(lines=state.cart,products=state.products,promos=state.promos,i
   let addTotal=0;const extras=line.extras||[],addonParts=[];
   if(!Array.isArray(extras)||extras.length>12||new Set(extras.map(e=>e.id)).size!==extras.length)throw Error('加購項目有誤或重複');
   for(const extra of extras){
-   const option=addonChoices(p,rollMaterials).find(x=>x.id===extra.id);
+   const choices=addonChoices(p,rollMaterials);
+   const option=choices.find(x=>x.id===extra.id);
    if(!option||!Number.isSafeInteger(option.price)||option.price<0)throw Error('加購價格或口味已修改，請重新選擇');
+   // Price source for the rules: product options (not the filtered UI list).
+   // When a rice-roll product uses the shared ingredient defaults, index is not used.
+   const configuredOptions=roll&&Array.isArray(p.rollAddonOptions)&&p.rollAddonOptions.length?p.rollAddonOptions:(roll?[]:p.addonOptions||[]);
+   const optionIndex=configuredOptions.length?configuredOptions.findIndex(x=>x.id===extra.id):0;
+   if(optionIndex<0||optionIndex>11)throw Error('加購選項與商品設定不同步，請重新選擇');
    const n=int(extra.qty,'加購數量',1,10000),material=rollMaterialMap.get(extra.id);
    if(roll){if(!material||material.hidden)throw Error('飯捲加購原料已停用或不存在');}
     else inc(needs,extra.id,n);
    const amount=option.price*n;if(!Number.isSafeInteger(amount)||amount<0||amount>10000000)throw Error('加購金額超出範圍');addTotal+=amount;if(!Number.isSafeInteger(addTotal))throw Error('加購總額異常');
-   addonParts.push({id:extra.id,qty:n,unitPrice:option.price,unitCost:roll?int(material.unitCost,'原料成本',0):0,amount,name:roll?material.name:(ingredients.find(x=>x.id===extra.id)?.name||'冰淇淋口味'),unit:roll?material.unit:'球'});
+   addonParts.push({id:extra.id,optionIndex,qty:n,unitPrice:option.price,unitCost:roll?int(material.unitCost,'原料成本',0):0,amount,name:roll?material.name:(ingredients.find(x=>x.id===extra.id)?.name||'冰淇淋口味'),unit:roll?material.unit:'球'});
   }
   const gross=p.price*qty;if(!Number.isSafeInteger(gross)||gross>10000000)throw Error('商品金額超出範圍');subtotal+=gross;extrasTotal+=addTotal;if(!Number.isSafeInteger(subtotal)||!Number.isSafeInteger(extrasTotal))throw Error('訂單金額計算異常');
   totals.push({...line,product:p,qty,gross,addTotal,addonParts,lineTotal:gross+addTotal,discount:0});
@@ -2097,6 +2107,25 @@ async function performRetryPendingOrder(){
 }
 
 /* 【功能區 JS-25】正式結帳：Firestore 交易、每日訂單編號及扣庫存 */
+// Rules cap: up to 10 document reads per write and 20 per atomic transaction.
+// 12 cart groups stay available; split only combinations with too many distinct paths.
+function assertSaleRulesAccessBudget(items,quote,customerOrderId,products=state.products){
+ const selected=[...new Set(items.filter(l=>!isOtherLine(l)).map(l=>l.productId))];
+ const byId=new Map(products.map(p=>[p.id,p]));
+ const rollAddons=new Set();
+ for(const line of items){
+  const p=byId.get(line.productId);
+  if(isRoll(p))for(const extra of line.extras||[])rollAddons.add(extra.id);
+ }
+ const ingredientCount=Object.keys(quote.needs||{}).length;
+ // 1 account, 1 counter, 1 optional customer order, distinct catalog/roll-addon docs.
+ const saleReads=2+Number(!!customerOrderId)+selected.length+rollAddons.size;
+ // Overall: account, sale, counter, optional customer, all catalog/ingredient/roll-addon docs.
+ const transactionReads=3+Number(!!customerOrderId)+selected.length+ingredientCount+rollAddons.size;
+ if(saleReads>10||transactionReads>20){
+  throw Error('這筆訂單涉及太多種不同商品／加購原料，超過資料庫安全核對額度（單筆仍可 12 組商品）。請拆成兩筆結帳，避免送出後卡在未回傳訂單。');
+ }
+}
 async function checkout(options={}){
  if(state.busy||state.checkoutAsking)return;
  if(state.pendingVerification&&!options.retry){await checkStoredReceipt();return;}
@@ -2109,6 +2138,8 @@ async function checkout(options={}){
   id=state.pendingOrderId;
   if(!id)throw Error('訂單編號尚未建立，請返回重試');
   items=structuredClone(state.cart);
+  const forBudget=options.retry?readPendingReceipt()?.customerOrderId:state.activeCustomerOrderId;
+  assertSaleRulesAccessBudget(items,base,forBudget,state.products);
   fingerprint=JSON.stringify({items,base:base.total,manual,reason,paid,total:ui.total});
   if(!options.retry){
    state.checkoutAsking=true;
@@ -2134,7 +2165,9 @@ async function checkout(options={}){
   if(promoSnap.metadata.fromCache||promoSnap.metadata.hasPendingWrites)throw Error('優惠資料未經伺服器確認');
   const promos=promoSnap.docs.map(d=>({id:d.id,...d.data()}));
   if(state.user?.uid!==checkoutUid)throw Error('登入帳號已切換；此筆訂單結果保留給原帳號核對');
-  await runTransaction(db,async tx=>{
+  // 【QR 付款格式相容】優先寫完整付款明細；只有 permission-denied 才回退到舊版 4 欄位。
+  // 兩個版本都會在同一個原子交易中寫入銷售、庫存與付款狀態，沿用相同訂單 ID。
+  const commitAtomicSale=async compactCustomerPayment=>runTransaction(db,async tx=>{
    const existing=await tx.get(ref);
    const customerRef=customerOrderId?doc(db,'customerOrders',customerOrderId):null;
    const customerSnap=customerRef?await tx.get(customerRef):null;
@@ -2173,6 +2206,7 @@ async function checkout(options={}){
     return isRoll(p)?[]:[...(p.recipe||[]).map(r=>r.id),...(l.extras||[]).map(e=>e.id)];
    }))];
    if(needIds.length>8)throw Error('單筆使用原料種類超過 8 種，受 Firestore 安全核對上限限制，請拆單');
+   assertSaleRulesAccessBudget(items,{needs:Object.fromEntries(needIds.map(x=>[x,1]))},customerOrderId,products);
    const iRefs=needIds.map(x=>doc(db,'ingredients',x));
    const ingSnaps=await Promise.all(iRefs.map(x=>tx.get(x)));
    const ingredients=ingSnaps.map((snap,i)=>{if(!snap.exists())throw Error('原料已移除');return {id:needIds[i],...snap.data()}});
@@ -2188,7 +2222,7 @@ async function checkout(options={}){
    const productCost=Object.values(calc.needs).reduce((n,v)=>n+v,0);
    if(!Number.isSafeInteger(rollCost)||rollCost<0||!Number.isSafeInteger(productCost))throw Error('成本計算異常');
    const lines=calc.lines.map(l=>({productId:l.productId,name:l.product.name,category:l.product.category,unit:l.product.unit,price:l.product.price,qty:l.qty,
-    extras:l.addonParts.map(e=>({id:e.id,qty:e.qty,name:e.name,unit:e.unit,price:e.unitPrice,netAmount:e.netAmount})),
+    extras:l.addonParts.map(e=>({id:e.id,optionIndex:e.optionIndex,qty:e.qty,name:e.name,unit:e.unit,price:e.unitPrice,netAmount:e.netAmount})),
     reason:isOtherLine(l)?l.reason:'',gross:l.gross,addonTotal:l.addTotal,promoDiscount:l.discount,manualDiscount:l.manualDiscount,discount:l.discount+l.manualDiscount,lineTotal:l.lineTotal}));
    const now=serverTimestamp();
    tx.set(ref,{...(customerOrderId?{customerOrderId}:{}),orderNo,orderDay,orderSequence,lines,needs:calc.needs,rollNeeds:calc.rollNeeds,productDeltas,total:calc.total,baseTotal:baseCalc.total,discount:calc.discount,promoDiscount:calc.promoDiscount,manualDiscount:calc.manualDiscount,manualReason:calc.manualReason,estimatedRollCost:rollCost,paid,change:paid-calc.total,status:'valid',hidden:false,fingerprint,actorUid:checkoutUid,actorName:checkoutActor,seat:checkoutSeat,createdAt:now});
@@ -2201,18 +2235,40 @@ async function checkout(options={}){
    for(let i=0;i<needIds.length;i++){
     const ing=ingredients[i];tx.update(iRefs[i],{usedQty:ing.usedQty+calc.needs[ing.id],updatedAt:now,lastOrderId:id});
    }
-   if(customerRef)tx.update(customerRef,{status:'paid',paidAt:now,paidBy:checkoutUid,saleId:id,
-    finalTotal:calc.total,editedByCashier:!customerOrderItemsMatch(customerSnap.data().items,items),
-    finalItems:items.map(l=>({productId:l.productId,qty:l.qty,extras:(l.extras||[]).map(e=>({id:e.id,qty:e.qty}))}))});
+   if(customerRef){
+    const settlement={status:'paid',paidAt:now,paidBy:checkoutUid,saleId:id};
+    if(!compactCustomerPayment)Object.assign(settlement,{
+     finalTotal:calc.total,
+     editedByCashier:!customerOrderItemsMatch(customerSnap.data().items,items),
+     finalItems:items.map(l=>({productId:l.productId,qty:l.qty,extras:(l.extras||[]).map(e=>({id:e.id,qty:e.qty}))}))
+    });
+    tx.update(customerRef,settlement);
+   }
    tx.set(counterRef,{date:orderDay,lastNo:orderSequence,lastOrderId:id,lastOrderNo:orderNo,updatedAt:now});
    tx.set(doc(db,'audit',id),{action:'checkout',summary:('結帳 '+orderNo+' · '+money(calc.total)+(manual?'；人工優惠 '+money(manual)+'（'+reason+'）':'')).slice(0,280),subjectId:id,actorUid:checkoutUid,actorName:checkoutActor,seat:checkoutSeat,createdAt:now,hidden:false});
   });
+  let usedCompactCustomerPayment=false;
+  try{await commitAtomicSale(false)}
+  catch(firstError){
+   const rejected=firstError?.code==='permission-denied'||/Missing or insufficient permissions/i.test(String(firstError?.message||''));
+   if(!customerOrderId||!rejected)throw firstError;
+   // permission-denied 確定被伺服器拒絕，沒有已提交但未知結果的模糊狀態。
+   // 重新進入交易時必須再檢查訂單狀態、期限、金額與庫存；不可能建立第二筆成功銷售。
+   try{await commitAtomicSale(true);usedCompactCustomerPayment=true}
+   catch(secondError){
+    console.warn('完整 QR 結帳與精簡相容格式均被拒絕',{
+     first:firstError?.code||firstError?.message,second:secondError?.code||secondError?.message});
+    const compatibilityFailure=Error('QR 訂單的完整與精簡付款格式都被資料庫拒絕；可能還有帳號、商品價格或庫存規則不相容：'+String(secondError?.message||'未知錯誤'));
+    compatibilityFailure.code=secondError?.code||'permission-denied';
+    throw compatibilityFailure;
+   }
+  }
   $('verifyStatus').textContent='已送出，正在向伺服器查核訂單…';
   const verified=await getDocFromServer(ref);
   if(!verified.exists()||verified.metadata.fromCache||verified.metadata.hasPendingWrites||verified.data().actorUid!==checkoutUid||verified.data().fingerprint!==fingerprint||verified.data().status!=='valid'||verified.data().total!==ui.total||verified.data().paid!==paid||verified.data().change!==paid-ui.total)throw Error('伺服器尚未確認這筆訂單');
   if(state.user?.uid!==checkoutUid)throw Error('登入帳號已切換；請使用原帳號核對該筆訂單');
   removePendingReceipt();state.cart=[];state.pendingOrderId=null;clearCustomerCheckoutLink();
-  $('confirmDialog').close();state.lastReceipt={id,...verified.data()};$('lastReceipt').classList.remove('hidden');render();showSuccessMark();cashierFeedback('success');toast('資料庫已確認 '+orderDisplay({id,...verified.data()})+' · '+money(verified.data().total)+' · 找零 '+money(verified.data().change));
+  $('confirmDialog').close();state.lastReceipt={id,...verified.data()};$('lastReceipt').classList.remove('hidden');render();showSuccessMark();cashierFeedback('success');toast('資料庫已確認 '+orderDisplay({id,...verified.data()})+' · '+money(verified.data().total)+' · 找零 '+money(verified.data().change)+(usedCompactCustomerPayment?'（相容模式，顧客端請以櫃台收據為準）':''));
  }catch(e){
   if(state.user?.uid!==checkoutUid){toast('登入帳號已切換，原訂單暫存保留在原帳號，請重新登入核對；不得再收款。',true);return;}
   const permissionRejected=e?.code==='permission-denied'||/Missing or insufficient permissions/i.test(String(e?.message||''));
