@@ -515,7 +515,7 @@ const app=initializeApp(config),auth=getAuth(app),db=getFirestore(app);
 const newRandomId=()=>{const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);return [...bytes].map(b=>b.toString(16).padStart(2,'0')).join('')};
 const $=id=>document.getElementById(id);const money=v=>'NT$'+Number(v||0).toLocaleString('zh-TW',{maximumFractionDigits:0});const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const int=(v,label,min=0,max=1e7)=>{if(v===null||v===undefined||String(v).trim()==='')throw Error(label+'不可空白');const n=Number(v);if(!Number.isSafeInteger(n)||n<min||n>max)throw Error(label+'必須為有效整數');return n};const seatOf=u=>{const m=String(u?.email||'').match(/^seat-(00|[1-9]|[1-9]\d)@school-22aa0\.firebaseapp\.com$/);return m?Number(m[1]):NaN};let toastTimer;
 let authSessionVersion=0;
-const state={user:null,role:null,name:'',products:[],ingredients:[],rollMaterials:[],promos:[],sales:[],audit:[],damages:[],cashCounts:[],accounts:[],settings:{stallName:'高一丁',sharedCost:0},cart:[],activeCustomerOrderId:null,customerOrders:[],unsubs:[],tab:'checkout',busy:false,pendingOrderId:null,pendingVerification:false,confirmedBaseTotal:0,stockProductId:null,iceProductId:null,customizeTargetKey:null,customizeReturnCart:false,splitReturnToCart:false,editProduct:null,editIngredient:null,editRollMaterial:null,refundId:null,refundUnconfirmedId:null,lastReceipt:null,displayMode:false,sync:{products:false,ingredients:false,rollMaterials:false,promos:false,sales:false,damages:false},errors:[]};
+const state={user:null,role:null,name:'',products:[],ingredients:[],rollMaterials:[],promos:[],sales:[],audit:[],damages:[],cashCounts:[],accounts:[],settings:{stallName:'高一丁',sharedCost:0},cart:[],activeCustomerOrderId:null,customerOrderOriginalItems:null,customerOrderEdited:false,customerOrders:[],unsubs:[],tab:'checkout',busy:false,pendingOrderId:null,pendingVerification:false,confirmedBaseTotal:0,stockProductId:null,iceProductId:null,customizeTargetKey:null,customizeReturnCart:false,splitReturnToCart:false,editProduct:null,editIngredient:null,editRollMaterial:null,refundId:null,refundUnconfirmedId:null,lastReceipt:null,displayMode:false,sync:{products:false,ingredients:false,rollMaterials:false,promos:false,sales:false,damages:false},errors:[]};
 /* 【功能區 JS-02】訊息提示、結帳成功動畫、使用者二次確認 */
 function toast(msg,error=false){if(error&&state.user&&Date.now()-lastFeedbackError>900){lastFeedbackError=Date.now();cashierSound('error')}const el=$('toast');el.textContent=String(msg);el.classList.toggle('error',error);el.classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.add('hidden'),4200)}
 let gyDoneTimer=null;
@@ -557,6 +557,7 @@ function renderHeldOrders(){
  el.innerHTML=arr.map(h=>'<article class="listrow hold-item"><div class="row"><div class="hold-main"><b>'+esc(new Date(h.savedAt||Date.now()).toLocaleString('zh-TW'))+'</b><div class="muted">'+esc((h.items||[]).map(i=>String(i.otherName||state.products.find(p=>p.id===i.productId)?.name||'商品')+' × '+i.qty).join('、'))+'</div><div class="hint">原暫存估價 '+money(h.estimated)+'（恢復時重新按現價計算）</div></div><div class="buttons"><button class="primary" type="button" data-hold-load="'+esc(h.id)+'">恢復</button><button class="danger" type="button" data-hold-delete="'+esc(h.id)+'">刪除</button></div></div></article>').join('')||'<div class="empty">目前沒有暫存訂單</div>';
 }
 function holdCurrentOrder(){
+ if(state.activeCustomerOrderId){toast('顧客 QR 訂單已在「進行中訂單」保留，請勿另存暫存單',true);return;}
  if(!state.user||state.busy||state.checkoutAsking||state.pendingVerification||readPendingReceipt()){toast('結帳尚未確認，請先核對，不能暫存新訂單',true);return}
  if(!state.cart.length){toast('清單目前沒有商品',true);return}
  try{
@@ -869,6 +870,7 @@ function updateSplitPreview(){
  }catch(e){$('splitFirstTotal').textContent='—';$('splitRestTotal').textContent='—';$('splitInfo').textContent=e.message;$('confirmSplit').disabled=true}
 }
 function openSplitCartDialog(){
+ if(state.activeCustomerOrderId){toast('顧客 QR 訂單不能拆單；可直接編輯商品，結帳後會同步更新原訂單',true);return;}
  if(!state.user||state.busy||state.checkoutAsking||state.pendingVerification||readPendingReceipt()){toast('有尚未確認的訂單，不能拆單',true);return}
  if(!state.cart.length){toast('購物車沒有商品',true);return}
  $('splitLines').innerHTML=state.cart.map(l=>{
@@ -948,6 +950,10 @@ let customerOrderingEnabled=false,customerOrderingReady=false,customerOrderingSa
 function applyCustomerOrderingVisibility(){
  const enabled=customerOrderingReady&&customerOrderingEnabled;
  if(!enabled)customerMode=false;
+ // Hide the guest-order tab for every cashier role while the service is disabled.
+ const customerOrdersNav=document.querySelector('[data-tab="customerOrders"]');
+ if(customerOrdersNav)customerOrdersNav.classList.toggle('hidden',!enabled);
+ if(!enabled&&state.user&&state.tab==='customerOrders')tab('checkout');
  $('customerModeBtn').classList.toggle('hidden',!enabled);
  $('customerCartBox').classList.toggle('hidden',!enabled||!customerMode);
  $('customerOrderingToggle').checked=enabled;
@@ -1177,7 +1183,7 @@ function renderCustomerReceipt(){
  const remain=Math.max(0,Math.ceil((customerExpireTime(order)-Date.now())/1000));
  const status=order.status==='paid'?'✅ 已付款':expired?'⌛ 已逾期（失效）':'⏳ 未付款';
  const date=order.createdAt?.toDate?.().toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})||'伺服器確認中';
- $('customerReceiptContent').innerHTML='<p><strong>訂單碼：'+esc(id)+'</strong></p><div class="row"><b>'+status+'</b><span id="customerRemaining">'+(order.status==='paid'?'付款完成':expired?'請重新點餐':'剩餘 '+Math.floor(remain/60)+' 分 '+remain%60+' 秒')+'</span></div><p class="hint">建立：'+esc(date)+'</p>'+customerOrderLinesText(order.items)+'<div class="row"><b>預估 '+money(order.estimateTotal)+'</b></div><p class="hint">實際應收以收銀員確認的套餐優惠及加購金額為準。送單不代表已付款。</p>';
+ $('customerReceiptContent').innerHTML='<p><strong>訂單碼：'+esc(id)+'</strong></p><div class="row"><b>'+status+'</b><span id="customerRemaining">'+(order.status==='paid'?'付款完成':expired?'請重新點餐':'剩餘 '+Math.floor(remain/60)+' 分 '+remain%60+' 秒')+'</span></div><p class="hint">建立：'+esc(date)+'</p>'+customerOrderLinesText(order.status==='paid'&&Array.isArray(order.finalItems)?order.finalItems:order.items)+'<div class="row"><b>'+(order.status==='paid'?'實際已付 '+money(order.finalTotal):'預估 '+money(order.estimateTotal))+'</b></div><p class="hint">'+(order.status==='paid'?'此筆訂單已完成付款；如有收銀員調整，以上顯示最終核對品項。':'實際應收以收銀員確認的套餐優惠及加購金額為準。送單不代表已付款。')+'</p>';
  if(order.status==='paid'||expired){$('customerQr').replaceChildren();customerRenderedQrId=null;return}
  if(customerRenderedQrId!==id){
   $('customerQr').replaceChildren();customerRenderedQrId=id;
@@ -1229,7 +1235,7 @@ async function deleteCustomerWasteOrder(id){
  try{await deleteDoc(doc(db,'customerOrders',id));if(state.activeCustomerOrderId===id){state.activeCustomerOrderId=null;state.cart=[];state.pendingOrderId=null;render()}try{await logged('customer.order.delete','刪除顧客未付款廢單 '+id.slice(-8),id)}catch(e){console.warn('顧客廢單已刪除，但操作日誌寫入失敗',e)}toast('未付款廢單已刪除')}
  catch(e){toast('刪除失敗：'+e.message,true)}
 }
-async function openStaffCustomerOrder(id){
+async function openStaffCustomerOrder(id,directPayment=false){
  if(!state.user||!customerOrderIdValid(id))return toast('請先登入收銀員帳號或提供有效訂單碼',true);
  try{
      const cached=state.customerOrders.find(o=>o.id===id);
@@ -1246,11 +1252,12 @@ async function openStaffCustomerOrder(id){
    let quote='尚未計算';try{const lines=order.items.map(l=>({...l,key:newRandomId()}));quote=money(rawOrder(lines).total)}catch(e){quote='無法核算：'+e.message}
   $('staffCustomerDetails').innerHTML='<p><b>訂單碼：'+esc(id)+'</b></p><p><strong>未付款</strong> · 限時 10 分鐘</p>'+customerOrderLinesText(order.items,true)+'<div class="row"><b>顧客預估：'+money(order.estimateTotal)+'</b><b>收銀即時核算：'+esc(quote)+'</b></div><p class="hint">點擊「載入並協助結帳」後仍需確認實收金額；未付款不會扣庫存。</p>';
   $('staffLoadCustomer').disabled=!state.sync.products||!state.sync.ingredients||!state.sync.rollMaterials||!state.sync.promos||!navigator.onLine;
-  if(!$('staffCustomerDialog').open)$('staffCustomerDialog').showModal();
+  if(directPayment)await loadStaffCustomerOrder(true);
+  else if(!$('staffCustomerDialog').open)$('staffCustomerDialog').showModal();
  }catch(e){toast('無法開啟顧客訂單：'+e.message,true)}
  finally{if(state.user)renderCustomerOrderList()}
 }
-async function loadStaffCustomerOrder(){
+async function loadStaffCustomerOrder(directPayment=false){
  if(!state.user||!customerOrderIdValid(customerSelectedStaffId))return;
  if(state.busy||state.pendingVerification||readPendingReceipt()||state.checkoutAsking)return toast('有待核對交易，請先完成核對',true);
  if(state.cart.length&&!await askSiteConfirm('目前人工結帳清單有商品，載入顧客訂單將取代它（尚未送出資料庫）。要繼續嗎？',{title:'切換至顧客訂單'}))return;
@@ -1261,9 +1268,11 @@ async function loadStaffCustomerOrder(){
    if(!order||order.id!==customerSelectedStaffId||order.status!=='pending'||customerExpired(order))throw Error('訂單已失效或付款，請重新選擇');
    const items=order.items.map(l=>({key:newRandomId(),productId:l.productId,qty:l.qty,extras:(l.extras||[]).map(e=>({...e}))}));
   rawOrder(items); // 從正式庫存、售價和優惠重新計算，不信任顧客提供的金額
-  state.cart=items;state.activeCustomerOrderId=customerSelectedStaffId;state.pendingOrderId=null;
-  $('staffCustomerDialog').close();customerSelectedStaffOrder=null;tab('checkout');render();
-  toast('已載入顧客訂單，請點下方「查看清單」協助結帳');
+  state.cart=items;state.activeCustomerOrderId=customerSelectedStaffId;
+  state.customerOrderOriginalItems=structuredClone(order.items);state.customerOrderEdited=false;state.pendingOrderId=null;
+  if($('staffCustomerDialog').open)$('staffCustomerDialog').close();customerSelectedStaffOrder=null;tab('checkout');render();
+  if(directPayment){showConfirm();toast('已開啟顧客付款頁；按「編輯商品」可修改品項、數量與加購');}
+  else toast('已載入顧客訂單，請點下方「查看清單」協助結帳');
  }catch(e){toast('載入失敗：'+e.message,true)}
 }
 function customerOrderIdFromText(value){
@@ -1300,7 +1309,7 @@ async function completeCustomerScan(id){
  customerScanBusy=true;
  // Close immediately after the first valid decode: no manual lookup press, no repeated decodes.
  if($('customerScanDialog').open)$('customerScanDialog').close();
- try{await stopCustomerScanner();await openStaffCustomerOrder(id)}
+ try{await stopCustomerScanner();await openStaffCustomerOrder(id,true)}
  finally{customerScanBusy=false}
 }
 async function openCustomerScanner(){
@@ -1709,8 +1718,8 @@ function render(){renderStats();renderProducts();renderInventory();renderDamage(
 /* 【功能區 JS-18】Firestore 即時監聽：商品、原料、銷售、權限和系統設定 */
 function listen(){for(const off of state.unsubs)off();state.unsubs=[];listenCustomerOrders();const bindings=[['products','products'],['ingredients','ingredients'],['rollIngredients','rollMaterials'],['promotions','promos'],['sales','sales'],['damage','damages']];state.sync={products:false,ingredients:false,rollMaterials:false,promos:false,sales:false,damages:false};state.errors=[];for(const [key,target] of bindings){state.unsubs.push(onSnapshot(collection(db,key),{includeMetadataChanges:true},snap=>{state[target]=snap.docs.map(d=>key==='sales'?normalizeSale({id:d.id,...d.data()}):({id:d.id,...d.data()}));state.sync[target]=!snap.metadata.fromCache&&!snap.metadata.hasPendingWrites;state.errors=state.errors.filter(e=>!e.startsWith(key+':'));render();setSync();if(['products','ingredients','rollIngredients'].includes(key)&&isManager())queuePublicMenuSync()},err=>{state.sync[target]=false;state.errors=state.errors.filter(e=>!e.startsWith(key+':'));state.errors.push(key+': '+err.message);setSync();toast(key+'讀取失敗：'+err.message,true)}))}state.unsubs.push(onSnapshot(collection(db,'cashCounts'),snap=>{state.cashCounts=snap.docs.map(d=>({id:d.id,...d.data()}));renderCashCounts()},e=>{$('cashSyncIssue').textContent='盤點資料讀取失敗：'+e.message;}));if(isManager())state.unsubs.push(onSnapshot(query(collection(db,'audit'),orderBy('createdAt','desc'),limit(200)),snap=>{state.audit=snap.docs.map(d=>({id:d.id,...d.data()}));renderAudit();renderMovements()},e=>toast('日誌讀取失敗：'+e.message,true)));state.unsubs.push(onSnapshot(doc(db,'meta','settings'),snap=>{state.settings={stallName:'高一丁',sharedCost:0,...(snap.exists()?snap.data():{})};$('brandName').textContent=state.settings.stallName;$('stallName').value=state.settings.stallName;$('sharedCost').value=state.settings.sharedCost;renderStats()},e=>toast(e.message,true)));if(isSuper())state.unsubs.push(onSnapshot(collection(db,'accounts'),snap=>{state.accounts=snap.docs.map(d=>({id:d.id,...d.data()}));renderAdmin()},e=>toast(e.message,true)))}
 /* 【功能區 JS-19】登入會話：座號權限、登入／登出與分頁路由 */
-async function openSession(u,sessionVersion){state.user=u;const seat=seatOf(u);if(!Number.isInteger(seat)){await signOut(auth);return}if(seat===26){state.role='super';state.name=''}else{const p=await getDoc(doc(db,'accounts',u.uid));if(sessionVersion!==authSessionVersion||state.user!==u)return;if(!p.exists()||p.data().seat!==seat){toast('帳號未經授權',true);await signOut(auth);return}if(sessionVersion!==authSessionVersion||state.user!==u)return;state.role=p.data().role;state.name=p.data().name||''}if(sessionVersion!==authSessionVersion||state.user!==u)return;state.cart=[];state.activeCustomerOrderId=null;loadCashierPrefs();state.lastReceipt=null;$('lastReceipt').classList.add('hidden');state.refundUnconfirmedId=null;try{state.refundUnconfirmedId=localStorage.getItem('gy_v2_refund_review_'+u.uid)||null}catch{}state.pendingVerification=!!readPendingReceipt();$('pendingCheck').classList.toggle('hidden',!state.pendingVerification);if(state.pendingVerification)toast('有未回傳訂單，請至「未回傳訂單」核對',true);renderPendingOrders();if($('loginPage').open)$('loginPage').close();$('menuPage').classList.add('hidden');$('headerLogin').classList.add('hidden');$('syncStatus').classList.remove('hidden');$('appPage').classList.remove('hidden');$('logoutBtn').classList.remove('hidden');$('openPersonalSettings').classList.remove('hidden');$('userChip').classList.remove('hidden');$('userChip').textContent=seat+' 號 · '+({super:'最高管理員',admin:'管理員',teacher:'老師',student:'學生'}[state.role]||'學生');document.querySelector('[data-tab="admin"]').classList.toggle('hidden',!isManager());document.querySelector('[data-tab="audit"]').classList.toggle('hidden',!isManager());document.querySelector('[data-tab="movements"]').classList.toggle('hidden',!isManager());document.querySelector('[data-tab="alerts"]').classList.toggle('hidden',!isManager());$('accountsPanel').classList.toggle('hidden',!isSuper());applyCustomerOrderingVisibility();$('exportSales').classList.toggle('hidden',!isSuper());$('exportAudit').classList.toggle('hidden',!isSuper());$('clearSales').classList.toggle('hidden',!isSuper());$('clearAudit').classList.toggle('hidden',!isSuper());tab('checkout');listen();renderRestockPending();$('openRestock').classList.toggle('hidden',!isManager());if(new URLSearchParams(location.search).get('display')==='1')enterDisplay()}
-function tab(t){if(['admin','audit','alerts','movements'].includes(t)&&!isManager())return;state.tab=t;for(const name of ['checkout','customerOrders','holds','inventory','damage','sales','pendingOrders','cash','alerts','movements','audit','admin'])$(name+'Tab').classList.toggle('hidden',name!==t);document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));renderCartBar()}
+async function openSession(u,sessionVersion){state.user=u;const seat=seatOf(u);if(!Number.isInteger(seat)){await signOut(auth);return}if(seat===26){state.role='super';state.name=''}else{const p=await getDoc(doc(db,'accounts',u.uid));if(sessionVersion!==authSessionVersion||state.user!==u)return;if(!p.exists()||p.data().seat!==seat){toast('帳號未經授權',true);await signOut(auth);return}if(sessionVersion!==authSessionVersion||state.user!==u)return;state.role=p.data().role;state.name=p.data().name||''}if(sessionVersion!==authSessionVersion||state.user!==u)return;state.cart=[];clearCustomerCheckoutLink();loadCashierPrefs();state.lastReceipt=null;$('lastReceipt').classList.add('hidden');state.refundUnconfirmedId=null;try{state.refundUnconfirmedId=localStorage.getItem('gy_v2_refund_review_'+u.uid)||null}catch{}state.pendingVerification=!!readPendingReceipt();$('pendingCheck').classList.toggle('hidden',!state.pendingVerification);if(state.pendingVerification)toast('有未回傳訂單，請至「未回傳訂單」核對',true);renderPendingOrders();if($('loginPage').open)$('loginPage').close();$('menuPage').classList.add('hidden');$('headerLogin').classList.add('hidden');$('syncStatus').classList.remove('hidden');$('appPage').classList.remove('hidden');$('logoutBtn').classList.remove('hidden');$('openPersonalSettings').classList.remove('hidden');$('userChip').classList.remove('hidden');$('userChip').textContent=seat+' 號 · '+({super:'最高管理員',admin:'管理員',teacher:'老師',student:'學生'}[state.role]||'學生');document.querySelector('[data-tab="admin"]').classList.toggle('hidden',!isManager());document.querySelector('[data-tab="audit"]').classList.toggle('hidden',!isManager());document.querySelector('[data-tab="movements"]').classList.toggle('hidden',!isManager());document.querySelector('[data-tab="alerts"]').classList.toggle('hidden',!isManager());$('accountsPanel').classList.toggle('hidden',!isSuper());applyCustomerOrderingVisibility();$('exportSales').classList.toggle('hidden',!isSuper());$('exportAudit').classList.toggle('hidden',!isSuper());$('clearSales').classList.toggle('hidden',!isSuper());$('clearAudit').classList.toggle('hidden',!isSuper());tab('checkout');listen();renderRestockPending();$('openRestock').classList.toggle('hidden',!isManager());if(new URLSearchParams(location.search).get('display')==='1')enterDisplay()}
+function tab(t){if(t==='customerOrders'&&(!customerOrderingReady||!customerOrderingEnabled))return;if(['admin','audit','alerts','movements'].includes(t)&&!isManager())return;state.tab=t;for(const name of ['checkout','customerOrders','holds','inventory','damage','sales','pendingOrders','cash','alerts','movements','audit','admin'])$(name+'Tab').classList.toggle('hidden',name!==t);document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));renderCartBar()}
 /* 【功能區 JS-20】商品與原料後台：配方、加購選項、新增及編輯 */
 function recipeRow(id='',qty=1){const el=document.createElement('div');el.className='addon-row recipe-row';el.innerHTML='<select class="part-id">'+state.ingredients.map(i=>'<option value="'+esc(i.id)+'">'+esc(i.name)+'</option>').join('')+'</select><input class="part-qty" type="number" min="1" step="1" value="'+qty+'"><button type="button" class="secondary" data-remove-row>移除</button>';$('recipeRows').append(el);if(id)el.querySelector('select').value=id}
 function rollAddonRow(id='',price=null){
@@ -1836,6 +1845,12 @@ async function saveRollStock(){
  }catch(e){toast('庫存更新未確認：'+e.message,true)}finally{state.busy=false;$('saveStock').disabled=false}
 }
 /* 【功能區 JS-22】購物車：商品數量、其它品項、加購直接編輯 */
+function markCashierCartChanged(){
+ state.pendingOrderId=null;
+ if(state.activeCustomerOrderId&&state.customerOrderOriginalItems)state.customerOrderEdited=true;
+ else {state.activeCustomerOrderId=null;state.customerOrderOriginalItems=null;state.customerOrderEdited=false;}
+}
+function clearCustomerCheckoutLink(){state.activeCustomerOrderId=null;state.customerOrderOriginalItems=null;state.customerOrderEdited=false;}
 function addItem(id,qty=1,extras=[]){
  if(state.busy||state.pendingVerification)throw Error("上一筆訂單尚未確認，請先核對資料庫結果");
  if(!Object.values(state.sync).every(Boolean)||state.errors.length)throw Error('資料尚未同步完成，請確認連線');
@@ -1846,14 +1861,14 @@ function addItem(id,qty=1,extras=[]){
  const next=state.cart.map(x=>({...x,extras:(x.extras||[]).map(y=>({...y}))}));
  if(existing)next.find(x=>x.key===existing.key).qty+=qty;
  else {if(next.length>=12)throw Error('同一筆最多 12 組商品');next.push({key:newRandomId(),productId:id,qty,extras});}
- rawOrder(next);state.cart=next;state.pendingOrderId=null;state.activeCustomerOrderId=null;render();cashierFeedback('add');
+ rawOrder(next);state.cart=next;markCashierCartChanged();render();cashierFeedback('add');
 }
 function changeCartQty(key,delta){
  if(state.busy||state.pendingVerification){toast("請先核對上一筆結帳結果",true);return;}
  if(state.cart.find(x=>x.key===key&&isOtherLine(x))){toast('其它品項如需修改，請先移除後重新加入',true);return;}
  const next=state.cart.map(l=>({...l,extras:[...(l.extras||[])]}));const item=next.find(x=>x.key===key);if(!item)return;
  item.qty+=delta;if(item.qty<=0)next.splice(next.findIndex(x=>x.key===key),1);
- try{if(next.length)rawOrder(next);state.cart=next;state.pendingOrderId=null;state.activeCustomerOrderId=null;render();if($('cartDialog').open)renderCart();cashierFeedback(delta>0?'add':'remove')}catch(err){toast(err.message,true)}
+ try{if(next.length)rawOrder(next);state.cart=next;markCashierCartChanged();render();if($('cartDialog').open)renderCart();cashierFeedback(delta>0?'add':'remove')}catch(err){toast(err.message,true)}
 }
 function adjustCard(id,delta){
  if(state.busy||state.pendingVerification)return;
@@ -1866,7 +1881,7 @@ function addOther(e){e.preventDefault();try{if(state.busy||state.pendingVerifica
  if(!name||name.length>60||!reason||reason.length>160)throw Error('請輸入品項名稱與原因');
  if(state.cart.length>=12)throw Error('每筆交易最多 12 組商品');
  const next=[...state.cart,{key:newRandomId(),productId:OTHER_ID,qty:1,extras:[],otherName:name,reason,otherPrice:price}];
- rawOrder(next);state.cart=next;state.pendingOrderId=null;state.activeCustomerOrderId=null;$('otherDialog').close();$('otherForm').reset();render();
+ rawOrder(next);state.cart=next;markCashierCartChanged();$('otherDialog').close();$('otherForm').reset();render();
  toast('其它品項已加入清單');cashierFeedback('add');
  }catch(err){toast(err.message,true)}}
 function openIce(id,exactKey=null){
@@ -1895,7 +1910,7 @@ function saveCustomizedItem(){
   if(!target)throw Error('商品清單已更新，請重新選擇');
   target.qty=qty;target.extras=extras;
   rawOrder(next);
-  state.cart=next;state.pendingOrderId=null;state.activeCustomerOrderId=null;render();
+  state.cart=next;markCashierCartChanged();render();
  }else addItem(p.id,qty,extras);
  state.customizeTargetKey=null;
  $('iceDialog').close();
@@ -1919,6 +1934,7 @@ function showConfirm(){
   $('beforeManualTotal').textContent=money(quote.total);$('verifyStatus').textContent='';$('verifyAgainBtn').classList.add('hidden');$('backCart').disabled=false;
   $('paid').value=quote.total;
   if(!state.pendingOrderId)state.pendingOrderId=newRandomId();
+  $('backCart').textContent=state.activeCustomerOrderId?'編輯商品':'返回清單';
   updateChange();$('cartDialog').close();$('confirmDialog').showModal();$('confirmDialog').querySelector('.modal-head h3').setAttribute('tabindex','-1');$('confirmDialog').querySelector('.modal-head h3').focus({preventScroll:true});
  }catch(e){toast(e.message,true)}
 }
@@ -1979,8 +1995,8 @@ async function performStoredReceiptCheck(){
   }
   const sale=snap.data();
   if(sale.actorUid!==state.user.uid||sale.fingerprint!==pending.fingerprint||Number(sale.total)!==Number(pending.total)||Number(sale.paid)!==Number(pending.paid)||Number(sale.change)!==Number(pending.paid)-Number(pending.total))throw Error('訂單資料與原始內容不一致，請管理員人工核對');
-  if(sale.status!=='valid'){removePendingReceipt();state.cart=[];state.pendingOrderId=null;state.activeCustomerOrderId=null;render();toast('訂單已存在且狀態為已退款，請核對交易紀錄；不會重新入帳',true);return true;}
-  removePendingReceipt();state.cart=[];state.pendingOrderId=null;state.activeCustomerOrderId=null;
+  if(sale.status!=='valid'){removePendingReceipt();state.cart=[];state.pendingOrderId=null;clearCustomerCheckoutLink();render();toast('訂單已存在且狀態為已退款，請核對交易紀錄；不會重新入帳',true);return true;}
+  removePendingReceipt();state.cart=[];state.pendingOrderId=null;clearCustomerCheckoutLink();
   if($('confirmDialog').open)$('confirmDialog').close();
   state.lastReceipt={id:pending.id,...sale};$('lastReceipt').classList.remove('hidden');render();showSuccessMark();cashierFeedback('success');toast('伺服器已核對 '+orderDisplay({id:pending.id,...sale})+'：'+money(sale.total));return true;
  }catch(e){
@@ -2034,7 +2050,7 @@ async function resolveRejectedPendingOrder(){
    const old=JSON.parse(localStorage.getItem(historyKey)||'[]');
    localStorage.setItem(historyKey,JSON.stringify([{...pending,archivedAt:Date.now(),customerStatus:status},...(Array.isArray(old)?old:[])].slice(0,10)));
   }catch(err){throw Error('無法保留未成功交易的本機備份，暫不解除：'+err.message)}
-  removePendingReceipt();state.cart=[];state.pendingOrderId=null;state.activeCustomerOrderId=null;
+  removePendingReceipt();state.cart=[];state.pendingOrderId=null;clearCustomerCheckoutLink();
   if($('confirmDialog').open)$('confirmDialog').close();
   if($('cartDialog').open)$('cartDialog').close();
   tab('checkout');render();
@@ -2059,7 +2075,9 @@ async function performRetryPendingOrder(){
    if(!checked.exists()||checked.data().status!=='pending'||customerExpired(checked.data())){
     toast('這張顧客訂單已付款、已取消或已逾期；請使用「核對後解除失敗暫存」，不要再重送',true);return;
    }
-   if(!customerOrderItemsMatch(checked.data().items,saved.items)){
+   if(!customerOrderItemsMatch(checked.data().items,saved.items) &&
+      !(saved.customerOrderEdited&&Array.isArray(saved.customerOrderOriginalItems)&&
+        customerOrderItemsMatch(checked.data().items,saved.customerOrderOriginalItems))){
     toast('暫存商品與顧客訂單不一致，不能重試；請先核對並解除暫存',true);return;
    }
   }catch(e){toast('無法核對顧客訂單：'+e.message,true);return}
@@ -2067,6 +2085,8 @@ async function performRetryPendingOrder(){
  if(!await askSiteConfirm('伺服器目前查無此訂單。將使用相同訂單編號重試送出，應收 '+money(saved.total)+'。請確認顧客沒有被再次收款。',{title:'重試未回傳訂單'}))return;
  try{
   state.cart=structuredClone(saved.items);state.pendingOrderId=saved.id;state.activeCustomerOrderId=saved.customerOrderId||null;
+  state.customerOrderOriginalItems=saved.customerOrderOriginalItems?structuredClone(saved.customerOrderOriginalItems):null;
+  state.customerOrderEdited=!!saved.customerOrderEdited;
   const base=summary();if(base.total!==saved.base)throw Error('商品價格或優惠規則已改變，為避免錯帳，不能自動重試；請先核對');
   $('manualDiscount').value=saved.manual;$('manualReason').value=saved.reason;
   $('paid').value=saved.paid;state.confirmedBaseTotal=saved.base;
@@ -2102,7 +2122,7 @@ async function checkout(options={}){
  const orderDay=todayTaiwan(),counterRef=doc(db,'orderCounters',orderDay);
  const previous=readPendingReceipt();
  const customerOrderId=options.retry?(previous?.customerOrderId||null):(state.activeCustomerOrderId||null);
- const pending={id,fingerprint,total:ui.total,base:base.total,paid,manual,reason,items,customerOrderId,createdAt:previous?.id===id?(previous.createdAt||Date.now()):Date.now()};
+ const pending={id,fingerprint,total:ui.total,base:base.total,paid,manual,reason,items,customerOrderId,customerOrderOriginalItems:customerOrderId?structuredClone(state.customerOrderOriginalItems||previous?.customerOrderOriginalItems||[]):null,customerOrderEdited:customerOrderId?!!state.customerOrderEdited:false,createdAt:previous?.id===id?(previous.createdAt||Date.now()):Date.now()};
  try{setPendingReceipt(pending)}catch(e){toast(e.message,true);return;}
  state.busy=true;$('confirmCheckout').disabled=true;
  $('verifyStatus').textContent='訂單已暫存，正在等待資料庫確認…';
@@ -2125,7 +2145,11 @@ async function checkout(options={}){
    if(customerRef){
     if(!customerSnap.exists()||customerSnap.data().status!=='pending')throw Error('顧客訂單已付款、已取消或不存在；禁止重複結帳');
     if(!customerSnap.data().createdAt||Date.now()>=customerSnap.data().createdAt.toMillis()+600000)throw Error('顧客訂單已超過 10 分鐘，請重新點餐');
-    if(!customerOrderItemsMatch(customerSnap.data().items,items))throw Error('顧客訂單內容已變更，請重新核對');
+    if(!customerOrderItemsMatch(customerSnap.data().items,items)){
+     if(!state.customerOrderEdited||!Array.isArray(state.customerOrderOriginalItems)||
+        !customerOrderItemsMatch(customerSnap.data().items,state.customerOrderOriginalItems))
+       throw Error('顧客訂單與收銀資料不一致，請重新掃碼核對');
+    }
    }
    const counterSnap=await tx.get(counterRef),lastSeq=counterSnap.exists()?Number(counterSnap.data().lastNo):0;
    if(!Number.isSafeInteger(lastSeq)||lastSeq<0||lastSeq>=999999)throw Error('訂單流水號已超出限制');
@@ -2177,7 +2201,9 @@ async function checkout(options={}){
    for(let i=0;i<needIds.length;i++){
     const ing=ingredients[i];tx.update(iRefs[i],{usedQty:ing.usedQty+calc.needs[ing.id],updatedAt:now,lastOrderId:id});
    }
-   if(customerRef)tx.update(customerRef,{status:'paid',paidAt:now,paidBy:checkoutUid,saleId:id});
+   if(customerRef)tx.update(customerRef,{status:'paid',paidAt:now,paidBy:checkoutUid,saleId:id,
+    finalTotal:calc.total,editedByCashier:!customerOrderItemsMatch(customerSnap.data().items,items),
+    finalItems:items.map(l=>({productId:l.productId,qty:l.qty,extras:(l.extras||[]).map(e=>({id:e.id,qty:e.qty}))}))});
    tx.set(counterRef,{date:orderDay,lastNo:orderSequence,lastOrderId:id,lastOrderNo:orderNo,updatedAt:now});
    tx.set(doc(db,'audit',id),{action:'checkout',summary:('結帳 '+orderNo+' · '+money(calc.total)+(manual?'；人工優惠 '+money(manual)+'（'+reason+'）':'')).slice(0,280),subjectId:id,actorUid:checkoutUid,actorName:checkoutActor,seat:checkoutSeat,createdAt:now,hidden:false});
   });
@@ -2185,7 +2211,7 @@ async function checkout(options={}){
   const verified=await getDocFromServer(ref);
   if(!verified.exists()||verified.metadata.fromCache||verified.metadata.hasPendingWrites||verified.data().actorUid!==checkoutUid||verified.data().fingerprint!==fingerprint||verified.data().status!=='valid'||verified.data().total!==ui.total||verified.data().paid!==paid||verified.data().change!==paid-ui.total)throw Error('伺服器尚未確認這筆訂單');
   if(state.user?.uid!==checkoutUid)throw Error('登入帳號已切換；請使用原帳號核對該筆訂單');
-  removePendingReceipt();state.cart=[];state.pendingOrderId=null;state.activeCustomerOrderId=null;
+  removePendingReceipt();state.cart=[];state.pendingOrderId=null;clearCustomerCheckoutLink();
   $('confirmDialog').close();state.lastReceipt={id,...verified.data()};$('lastReceipt').classList.remove('hidden');render();showSuccessMark();cashierFeedback('success');toast('資料庫已確認 '+orderDisplay({id,...verified.data()})+' · '+money(verified.data().total)+' · 找零 '+money(verified.data().change));
  }catch(e){
   if(state.user?.uid!==checkoutUid){toast('登入帳號已切換，原訂單暫存保留在原帳號，請重新登入核對；不得再收款。',true);return;}
@@ -2487,7 +2513,7 @@ $('headerLogin').onclick=()=>{if(menuSessionUser){cashierEntryRequested=true;con
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).close());$('loginForm').onsubmit=async e=>{e.preventDefault();try{const raw=$('seat').value.trim();if(!/^(00|0?[1-9]|[1-9]\d)$/.test(raw))throw Error('座號格式不正確');$('loginBtn').disabled=true;await signInWithEmailAndPassword(auth,'seat-'+(Number(raw)===0?'00':Number(raw))+'@school-22aa0.firebaseapp.com',$('password').value);$('password').value=''}catch(err){$('loginError').textContent='登入失敗：'+err.message}finally{$('loginBtn').disabled=false}};$('logoutBtn').onclick=()=>{if(state.busy||state.checkoutAsking||state.pendingVerification){toast('有訂單正在送出或尚未核對，請先完成核對再登出',true);return;}signOut(auth)};
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tab(b.dataset.tab));$('productSearch').oninput=renderProducts;$('productGrid').onclick=e=>{const plus=e.target.closest('[data-card-plus]'),minus=e.target.closest('[data-card-minus]'),ice=e.target.closest('[data-open-ice]'),tap=e.target.closest('[data-tap]');if(minus)adjustCard(minus.dataset.cardMinus,-1);else if(plus)adjustCard(plus.dataset.cardPlus,1);else if(ice)openIce(ice.dataset.openIce);else if(tap)adjustCard(tap.dataset.tap,1)};$('iceQty').oninput=updateIcePrice;for(const [id,delta] of [['iceQtyMinus',-1],['iceQtyPlus',1]])$(id).onclick=()=>{const el=$('iceQty');const n=Number(el.value);el.value=String(Math.max(1,Math.min(10000,(Number.isSafeInteger(n)?n:1)+delta)));updateIcePrice()};$('iceFlavors').oninput=updateIcePrice;$('iceFlavors').onclick=e=>{const b=e.target.closest('[data-ice-plus],[data-ice-minus]');if(!b)return;const id=b.dataset.icePlus||b.dataset.iceMinus;const el=[...document.querySelectorAll('.ice-ball')].find(x=>x.dataset.flavor===id);if(!el)return;const delta=b.hasAttribute('data-ice-plus')?1:-1;el.value=Math.max(0,Math.min(10000,(Number(el.value)||0)+delta));updateIcePrice()};$('addIceToCart').onclick=()=>{try{saveCustomizedItem()}catch(e){toast(e.message,true)}};
 $('productGrid').addEventListener('click',e=>{if(e.target.closest('#openOther')){$('otherDialog').showModal();}});$('otherForm').onsubmit=addOther;
-$('openCart').onclick=()=>{renderCart();if(state.pendingVerification){toast('請先查核上一筆交易',true);return;}$('cartDialog').showModal()};$('cartLines').onclick=e=>{const plus=e.target.closest('[data-cart-plus]'),minus=e.target.closest('[data-cart-minus]'),edit=e.target.closest('[data-cart-edit]'),b=e.target.closest('[data-remove-cart]');if(edit){const target=state.cart.find(l=>l.key===edit.dataset.cartEdit);if(target&&!isOtherLine(target)){state.customizeReturnCart=true;$('cartDialog').close();openIce(target.productId,target.key)}return;}if(plus)changeCartQty(plus.dataset.cartPlus,1);else if(minus)changeCartQty(minus.dataset.cartMinus,-1);else if(b){state.cart=state.cart.filter(l=>l.key!==b.dataset.removeCart);state.pendingOrderId=null;state.activeCustomerOrderId=null;render();renderCart()}};$('toConfirm').onclick=showConfirm;$('backCart').onclick=()=>{$('confirmDialog').close();renderCart();$('cartDialog').showModal()};$('exactPaidBtn').onclick=()=>{try{$('paid').value=manualQuote().total;updateChange()}catch(e){toast(e.message,true)}};$('paid').oninput=updateChange;$('manualDiscount').oninput=updateChange;$('manualReason').oninput=updateChange;$('confirmCheckout').onclick=checkout;$('pendingCheck').onclick=checkStoredReceipt;$('verifyAgainBtn').onclick=checkStoredReceipt;
+$('openCart').onclick=()=>{renderCart();if(state.pendingVerification){toast('請先查核上一筆交易',true);return;}$('cartDialog').showModal()};$('cartLines').onclick=e=>{const plus=e.target.closest('[data-cart-plus]'),minus=e.target.closest('[data-cart-minus]'),edit=e.target.closest('[data-cart-edit]'),b=e.target.closest('[data-remove-cart]');if(edit){const target=state.cart.find(l=>l.key===edit.dataset.cartEdit);if(target&&!isOtherLine(target)){state.customizeReturnCart=true;$('cartDialog').close();openIce(target.productId,target.key)}return;}if(plus)changeCartQty(plus.dataset.cartPlus,1);else if(minus)changeCartQty(minus.dataset.cartMinus,-1);else if(b){state.cart=state.cart.filter(l=>l.key!==b.dataset.removeCart);markCashierCartChanged();render();renderCart()}};$('toConfirm').onclick=showConfirm;$('backCart').onclick=()=>{$('confirmDialog').close();renderCart();$('cartDialog').showModal()};$('exactPaidBtn').onclick=()=>{try{$('paid').value=manualQuote().total;updateChange()}catch(e){toast(e.message,true)}};$('paid').oninput=updateChange;$('manualDiscount').oninput=updateChange;$('manualReason').oninput=updateChange;$('confirmCheckout').onclick=checkout;$('pendingCheck').onclick=checkStoredReceipt;$('verifyAgainBtn').onclick=checkStoredReceipt;
 $('openDamage').onclick=openDamage;$('damageForm').onsubmit=saveDamage;$('damageIngredient').onchange=updateDamageEstimate;$('damageQty').oninput=updateDamageEstimate;$('damageReason').onchange=()=>{$('damageReasonOtherBox').classList.toggle('hidden',$('damageReason').value!=='其他')};$('addIngredient').onclick=()=>openIngredient();$('ingredientForm').onsubmit=saveIngredient;$('ingredientList').onclick=e=>{const b=e.target.closest('[data-edit-ingredient]');if(b)openIngredient(b.dataset.editIngredient)};$('addRollMaterial').onclick=()=>openRollMaterial();$('rollMaterialForm').onsubmit=saveRollMaterial;$('rollMaterialList').onclick=e=>{const b=e.target.closest('[data-edit-roll-material]');if(b)openRollMaterial(b.dataset.editRollMaterial)};$('addProduct').onclick=()=>openProduct();$('addRollProduct').onclick=()=>openProduct(null,'飯捲');$('addRollAddon').onclick=()=>rollAddonRow();$('rollAddonRows').onclick=e=>{const b=e.target.closest('[data-remove-row]');if(b)b.closest('.addon-row').remove()};$('rollInventoryGrid').onclick=e=>{const b=e.target.closest('[data-stock-roll]');if(b)openRollStock(b.dataset.stockRoll)};$('saveStock').onclick=saveRollStock;$('productAdminList').onclick=e=>{const b=e.target.closest('[data-edit-product]');if(b)openProduct(b.dataset.editProduct)};$('productType').onchange=updateType;$('addRecipe').onclick=()=>recipeRow();$('addAddonOption').onclick=()=>addonRow();$('recipeRows').onclick=$('addonOptionRows').onclick=e=>{if(e.target.closest('[data-remove-row]'))e.target.closest('.addon-row').remove()};$('productForm').onsubmit=saveProduct;$('customerOrderingToggle').onchange=async e=>{
  if(!isManager()||!customerOrderingReady||customerOrderingSaving){e.target.checked=customerOrderingEnabled;return}
  const desired=!!e.target.checked;
@@ -2524,5 +2550,5 @@ $('restockCheck').onclick=async()=>{const p=readRestockPending();if(!p)return;if
 $('openDisplay').onclick=enterDisplay;$('exitDisplay').onclick=exitDisplay;
 $('lastReceipt').onclick=()=>{if(state.lastReceipt)renderReceipt(state.sales.find(x=>x.id===state.lastReceipt.id)||state.lastReceipt)};
 $('copyReceipt').onclick=copyReceipt;$('saveReceiptPng').onclick=saveReceiptImage;
-try{await setPersistence(auth,browserSessionPersistence)}catch(e){console.warn('無法保留瀏覽器登入狀態，改用暫時登入',e);await setPersistence(auth,inMemoryPersistence)}onAuthStateChanged(auth,async u=>{const version=++authSessionVersion;for(const f of state.unsubs)f();state.unsubs=[];state.user=u;clearSuccessMark();if(!u){menuSessionUser=null;cashierEntryRequested=false;state.activeCustomerOrderId=null;state.customerOrders=[];$('headerLogin').textContent='登入';state.pendingVerification=false;$('pendingCheck').classList.add('hidden');state.role=null;state.name='';if($('loginPage').open)$('loginPage').close();$('menuPage').classList.remove('hidden');$('headerLogin').classList.remove('hidden');$('syncStatus').classList.add('hidden');$('appPage').classList.add('hidden');$('displayPage').classList.add('hidden');state.displayMode=false;state.lastReceipt=null;$('lastReceipt').classList.add('hidden');$('logoutBtn').classList.add('hidden');$('openPersonalSettings').classList.add('hidden');$('userChip').classList.add('hidden');$('syncStatus').textContent='尚未登入';applyCustomerOrderingVisibility();return}if(!cashierEntryRequested){menuSessionUser=u;state.user=null;$('headerLogin').textContent='進入結帳';$('headerLogin').classList.remove('hidden');$('menuPage').classList.remove('hidden');if($('loginPage').open)$('loginPage').close();$('appPage').classList.add('hidden');$('displayPage').classList.add('hidden');$('syncStatus').classList.add('hidden');return}menuSessionUser=null;try{await openSession(u,version)}catch(err){toast(err.message,true);await signOut(auth)}});
+try{await setPersistence(auth,browserSessionPersistence)}catch(e){console.warn('無法保留瀏覽器登入狀態，改用暫時登入',e);await setPersistence(auth,inMemoryPersistence)}onAuthStateChanged(auth,async u=>{const version=++authSessionVersion;for(const f of state.unsubs)f();state.unsubs=[];state.user=u;clearSuccessMark();if(!u){menuSessionUser=null;cashierEntryRequested=false;clearCustomerCheckoutLink();state.customerOrders=[];$('headerLogin').textContent='登入';state.pendingVerification=false;$('pendingCheck').classList.add('hidden');state.role=null;state.name='';if($('loginPage').open)$('loginPage').close();$('menuPage').classList.remove('hidden');$('headerLogin').classList.remove('hidden');$('syncStatus').classList.add('hidden');$('appPage').classList.add('hidden');$('displayPage').classList.add('hidden');state.displayMode=false;state.lastReceipt=null;$('lastReceipt').classList.add('hidden');$('logoutBtn').classList.add('hidden');$('openPersonalSettings').classList.add('hidden');$('userChip').classList.add('hidden');$('syncStatus').textContent='尚未登入';applyCustomerOrderingVisibility();return}if(!cashierEntryRequested){menuSessionUser=u;state.user=null;$('headerLogin').textContent='進入結帳';$('headerLogin').classList.remove('hidden');$('menuPage').classList.remove('hidden');if($('loginPage').open)$('loginPage').close();$('appPage').classList.add('hidden');$('displayPage').classList.add('hidden');$('syncStatus').classList.add('hidden');return}menuSessionUser=null;try{await openSession(u,version)}catch(err){toast(err.message,true);await signOut(auth)}});
 </script></body></html>
