@@ -1741,6 +1741,9 @@ async function checkout(options={}){
    const iRefs=needIds.map(x=>doc(db,'ingredients',x));
    const ingSnaps=await Promise.all(iRefs.map(x=>tx.get(x)));
    const ingredients=ingSnaps.map((snap,i)=>{if(!snap.exists())throw Error('原料已移除');return {id:needIds[i],...snap.data()}});
+   for(const ing of ingredients){
+    if(ing.usedQty!==undefined&&(!Number.isSafeInteger(ing.usedQty)||ing.usedQty<0))throw Error('原料「'+ing.name+'」的舊版用量格式不正確，請先核對；本次未送出');
+   }
    const currentPromos=(await Promise.all(promos.map(x=>tx.get(doc(db,'promotions',x.id))))).filter(x=>x.exists()).map(x=>({id:x.id,...x.data()}));
    const baseCalc=rawOrder(items,products,currentPromos,ingredients,rollIngredients);
    if(baseCalc.total!==base.total||baseCalc.lines.length!==base.lines.length||baseCalc.lines.some((line,i)=>{
@@ -1748,6 +1751,11 @@ async function checkout(options={}){
    }))throw Error('商品售價、優惠或加購選項已變更，請返回重新核對');
    const calc=applyStaffDiscount(baseCalc,manual,reason);
    if(calc.total!==ui.total||paid<calc.total)throw Error('金額核對失敗，未完成交易');
+   for(const p of products){
+    if((p.sold!==undefined&&(!Number.isSafeInteger(p.sold)||p.sold<0)) || (p.revenue!==undefined&&(!Number.isSafeInteger(p.revenue)||p.revenue<0))){
+     throw Error('商品「'+p.name+'」的舊版銷售統計格式不正確，需先核對資料庫；本次未送出');
+    }
+   }
    const productDeltas=saleProductDeltas(calc);
    const rollCost=Object.entries(productDeltas).reduce((n,[key,d])=>n+(products.find(p=>p.id===key)?.unitCost||0)*d.rollQty,0)+calc.lines.reduce((n,l)=>n+(isRoll(l.product)?l.addonParts.reduce((v,x)=>v+x.qty*x.unitCost,0):0),0);
    const productCost=Object.values(calc.needs).reduce((n,v)=>n+v,0);
@@ -1764,7 +1772,7 @@ async function checkout(options={}){
     tx.update(pRefs[i],update);
    }
    for(let i=0;i<needIds.length;i++){
-    const ing=ingredients[i];tx.update(iRefs[i],{usedQty:ing.usedQty+calc.needs[ing.id],updatedAt:now,lastOrderId:id});
+    const ing=ingredients[i];tx.update(iRefs[i],{usedQty:Number(ing.usedQty||0)+calc.needs[ing.id],updatedAt:now,lastOrderId:id});
    }
    tx.set(counterRef,{date:orderDay,lastNo:orderSequence,lastOrderId:id,lastOrderNo:orderNo,updatedAt:now});
    tx.set(doc(db,'audit',id),{action:'checkout',summary:('結帳 '+orderNo+' · '+money(calc.total)+(manual?'；人工優惠 '+money(manual)+'（'+reason+'）':'')).slice(0,280),subjectId:id,actorUid:checkoutUid,actorName:checkoutActor,seat:checkoutSeat,createdAt:now,hidden:false});
