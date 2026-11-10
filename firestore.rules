@@ -371,8 +371,7 @@ service cloud.firestore {
         && request.resource.data.lastOrderId is string
         && request.resource.data.lastOrderNo is string
         && request.resource.data.updatedAt == request.time
-        && currentCounterSaleMatches(request.resource.data)
-        && counterStockMatches(request.resource.data);
+        && currentCounterSaleMatches(request.resource.data);
       allow update: if member()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastNo','lastOrderId','lastOrderNo','updatedAt'])
         && request.resource.data.date == day
@@ -382,8 +381,7 @@ service cloud.firestore {
         && request.resource.data.lastOrderId is string
         && request.resource.data.lastOrderNo is string
         && request.resource.data.updatedAt == request.time
-        && currentCounterSaleMatches(request.resource.data)
-        && counterStockMatches(request.resource.data);
+        && currentCounterSaleMatches(request.resource.data);
       allow delete: if false;
     }
     match /cashCounts/{id} {
@@ -547,12 +545,10 @@ service cloud.firestore {
           && catalogAddonAt(extras,10,product) && catalogAddonAt(extras,11,product);
       }
       function validCatalogPrice(line) {
-        // Reuse the product document needed for base-price verification.
-        let product = getAfter(/databases/$(database)/documents/products/$(line.productId)).data;
+        // Read the existing catalog price; post-transaction stock changes are validated in /products and /ingredients.
+        let product = get(/databases/$(database)/documents/products/$(line.productId)).data;
         return catalogAddonsMatch(line.extras, product)
           && catalogRecipeNeedsCovered(line, product)
-          && product.lastOrderId == id
-          && product.updatedAt == request.time
           && line.productId in request.resource.data.productDeltas
           && product.price == line.price
           && product.name == line.name
@@ -734,6 +730,7 @@ service cloud.firestore {
         && request.resource.data.paid >= request.resource.data.total
         && request.resource.data.change == request.resource.data.paid - request.resource.data.total
         && allProductDeltasMatch(request.resource.data)
+        && saleNeedsHaveStockUpdatesData(id, request.resource.data)
         && consistentSaleAmounts(request.resource.data)
         && request.resource.data.orderNo is string
         && request.resource.data.orderNo.matches('^GD-[0-9]{8}-[0-9]{4,}$')
