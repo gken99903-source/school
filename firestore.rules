@@ -1,241 +1,343 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // School Anniversary 全新專案：帳號存於 accounts/{座號}；密碼證明不對客戶端開放讀取。
-    // Firebase Anonymous Auth 只提供不可偽造的裝置 UID；座號權限由此處的 Firestore 工作階段核對。
-    function accountPath(seat) { return /databases/$(database)/documents/accounts/$(seat); }
-    function secretPath(seat) { return /databases/$(database)/documents/loginSecrets/$(seat); }
-    function sessionPath() { return /databases/$(database)/documents/sessions/$(request.auth.uid); }
-    function hasSession() {
-      return request.auth != null
-        && exists(sessionPath())
-        && get(sessionPath()).data.issuedAt > request.time - duration.value(15,'d')
-        && exists(accountPath(get(sessionPath()).data.seat))
-        && get(accountPath(get(sessionPath()).data.seat)).data.enabled == true
-        && get(accountPath(get(sessionPath()).data.seat)).data.credentialVersion == get(sessionPath()).data.version;
-    }
-    function member() { return hasSession(); }
-    function role() { return get(accountPath(get(sessionPath()).data.seat)).data.role; }
+    function loggedIn() { return request.auth != null; }
     function superAdmin() {
-      return member() && get(sessionPath()).data.seat == '26' && role() == 'super';
+      return loggedIn() && request.auth.token.email == 'seat-26@school-22aa0.firebaseapp.com';
     }
-    function manager() { return member() && (superAdmin() || role() in ['admin','teacher']); }
-    function catalogAdmin() { return member() && (superAdmin() || role() == 'admin'); }
-
-    match /accounts/{seat} {
-      // 一次性首個管理員啟用：不允許修改角色、密碼版本或覆寫已建立的 26 號。
-      // 僅能按座號單筆讀取帳號基本資訊；密碼證明獨立存在 loginSecrets，不可讀取。
-      allow get: if request.auth != null;
-      allow list: if superAdmin();
-      allow create: if request.auth != null && (
-        (seat == '26' && !exists(accountPath('26'))
-         && request.resource.data.keys().hasOnly(['seat','role','name','enabled','credentialVersion','createdAt'])
-         && request.resource.data.seat == '26' && request.resource.data.role == 'super'
-         && request.resource.data.name == '最高管理員' && request.resource.data.enabled == true
-         && request.resource.data.credentialVersion == 1 && request.resource.data.createdAt == request.time
-         && getAfter(secretPath('26')).data.proof == '3a090e43c45470a767c3ad161f46e85b04de2503b03b5878eee71e1e2007ee75')
-        || (superAdmin() && seat != '26' && seat.matches('^(00|[0-9]|[1-9][0-9])$')
-         && request.resource.data.keys().hasOnly(['seat','role','name','enabled','credentialVersion','createdAt'])
-         && request.resource.data.seat == seat
-         && request.resource.data.role in ['student','teacher','admin']
-         && request.resource.data.name is string && request.resource.data.name.size() <= 30
-         && request.resource.data.enabled == true && request.resource.data.credentialVersion == 1
-         && request.resource.data.createdAt == request.time)
-      );
+    function accountPath() {
+      return /databases/$(database)/documents/accounts/$(request.auth.uid);
+    }
+    // 單次讀取會員資料；避免同筆交易多次 exists/get 消耗規則額度。
+    function activeAccount() {
+      return loggedIn() && activeAccountDataValid();
+    }
+    function activeAccountDataValid() {
+      let account = get(accountPath()).data;
+      return account.email == request.auth.token.email
+        && account.role in ['student','teacher','admin'];
+    }
+    function member() { return superAdmin() || activeAccount(); }
+    function manager() {
+      return superAdmin() || (activeAccount() && get(accountPath()).data.role in ['admin','teacher']);
+    }
+    function catalogDeleter() {
+      return superAdmin() || (activeAccount() && get(accountPath()).data.role == 'admin');
+    }
+    function auditCheck() {
+      return member()
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+    }
+    match /accounts/{uid} {
+      allow read: if superAdmin() || (loggedIn() && request.auth.uid == uid);
+      allow create: if superAdmin()
+        && uid != request.auth.uid
+        && request.resource.data.role in ['admin','teacher','student']
+        && request.resource.data.seat is int
+        && request.resource.data.seat >= 0 && request.resource.data.seat <= 99
+        && request.resource.data.seat != 26
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 30
+        && request.resource.data.email is string
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time;
       allow update: if superAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-             'role','name','enabled','credentialVersion','updatedBy','updatedAt'])
-        && request.resource.data.seat == resource.data.seat
-        && request.resource.data.role == (seat == '26' ? 'super' : request.resource.data.role)
-        && (seat == '26' || request.resource.data.role in ['student','teacher','admin'])
-        && request.resource.data.credentialVersion is int
-        && request.resource.data.credentialVersion >= resource.data.credentialVersion
-        && request.resource.data.credentialVersion <= resource.data.credentialVersion + 1
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role','updatedBy','updatedAt'])
+        && request.resource.data.role in ['admin','teacher','student']
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.updatedAt == request.time;
-      allow delete: if superAdmin() && seat != '26';
+      allow delete: if false;
     }
-
-    match /loginSecrets/{seat} {
-      allow read: if false;
-      allow create: if request.auth != null && request.resource.data.keys().hasOnly(['proof','updatedAt'])
-        && request.resource.data.proof is string && request.resource.data.proof.matches('^[0-9a-f]{64}$')
-        && request.resource.data.updatedAt == request.time
-        && ((seat == '26' && !exists(accountPath('26'))
-             && request.resource.data.proof == '3a090e43c45470a767c3ad161f46e85b04de2503b03b5878eee71e1e2007ee75'
-             && getAfter(accountPath('26')).data.role == 'super')
-            || (superAdmin() && seat != '26'));
-      allow update: if superAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['proof','updatedAt'])
-        && request.resource.data.proof is string && request.resource.data.proof.matches('^[0-9a-f]{64}$')
-        && request.resource.data.updatedAt == request.time;
-      allow delete: if superAdmin() && seat != '26';
-    }
-
-    match /sessions/{uid} {
-      allow get: if request.auth != null && uid == request.auth.uid;
-      allow list: if false;
-      allow create, update: if request.auth != null && uid == request.auth.uid
-        && request.resource.data.keys().hasOnly(['seat','proof','version','issuedAt'])
-        && request.resource.data.seat is string
-        && exists(accountPath(request.resource.data.seat))
-        && get(accountPath(request.resource.data.seat)).data.enabled == true
-        && request.resource.data.version == get(accountPath(request.resource.data.seat)).data.credentialVersion
-        && request.resource.data.proof == get(secretPath(request.resource.data.seat)).data.proof
-        && request.resource.data.issuedAt == request.time;
-      allow delete: if request.auth != null && uid == request.auth.uid;
-    }
-
-    match /menuPublic/{id} {
-      allow read: if true;
-      allow create, update: if manager()
-        && request.resource.data.keys().hasOnly(['name','category','unit','price','hidden','addons','publishedAt'])
-        && request.resource.data.keys().hasAll(['name','category','unit','price','hidden','publishedAt'])
-        && request.resource.data.name is string && request.resource.data.name.size() > 0
-        && request.resource.data.category is string && request.resource.data.unit is string
-        && request.resource.data.price is int && request.resource.data.price >= 1
-        && request.resource.data.hidden is bool
-        && request.resource.data.publishedAt == request.time
-        && (!('addons' in request.resource.data) || request.resource.data.addons is list);
-      allow delete: if catalogAdmin();
-    }
-    match /customerOrders/{id} { allow read, write: if false; }
-
     match /meta/{id} {
       allow read: if member();
       allow create, update: if manager() && id == 'settings'
-        && request.resource.data.sharedCost is int && request.resource.data.sharedCost >= 0
-        && request.resource.data.stallName is string && request.resource.data.stallName.size() <= 45;
+        && request.resource.data.sharedCost is int
+        && request.resource.data.sharedCost >= 0
+        && request.resource.data.stallName is string
+        && request.resource.data.stallName.size() <= 45;
       allow delete: if false;
     }
     match /promotions/{id} {
       allow read: if member();
       allow create: if manager()
-        && request.resource.data.productA is string && request.resource.data.productB is string
+        && request.resource.data.productA is string
+        && request.resource.data.productB is string
         && request.resource.data.productA != request.resource.data.productB
-        && request.resource.data.price is int && request.resource.data.price >= 0
-        && request.resource.data.createdAt == request.time;
+        && request.resource.data.price is int
+        && request.resource.data.price >= 0
+        && request.resource.data.price <= 10000000;
       allow update, delete: if false;
     }
-
+    // 新版新增的公開菜單：保留原有成本資料隱私。
+    match /menuPublic/{id} {
+      allow read: if true;
+      allow create, update: if manager()
+        && request.resource.data.keys().hasOnly(['name','category','unit','price','hidden','addons','publishedAt'])
+        && request.resource.data.keys().hasAll(['name','category','unit','price','hidden','publishedAt'])
+        && request.resource.data.publishedAt == request.time
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
+        && request.resource.data.category is string
+        && request.resource.data.unit is string
+        && request.resource.data.price is int && request.resource.data.price >= 1
+        && request.resource.data.hidden is bool
+        && (!('addons' in request.resource.data) || (request.resource.data.addons is list && request.resource.data.addons.size() <= 12))
+        && existsAfter(/databases/$(database)/documents/products/$(id))
+        && request.resource.data.name == getAfter(/databases/$(database)/documents/products/$(id)).data.name
+        && request.resource.data.category == getAfter(/databases/$(database)/documents/products/$(id)).data.category
+        && request.resource.data.unit == getAfter(/databases/$(database)/documents/products/$(id)).data.unit
+        && request.resource.data.price == getAfter(/databases/$(database)/documents/products/$(id)).data.price
+        && request.resource.data.hidden == getAfter(/databases/$(database)/documents/products/$(id)).data.get('hidden',false);
+      allow delete: if catalogDeleter()
+        && !existsAfter(/databases/$(database)/documents/products/$(id));
+    }
+    // 舊顧客 QR 訂單只允許查詢，禁止再新增或更新。
+    match /customerOrders/{id} {
+      allow get: if member();
+      allow list, create, update, delete: if false;
+    }
     match /products/{id} {
       allow read: if member();
       allow create: if manager()
-        && request.resource.data.price is int && request.resource.data.price >= 1
-        && request.resource.data.sold == 0 && request.resource.data.revenue == 0
+        && request.resource.data.sold == 0
+        && request.resource.data.revenue == 0
+        && request.resource.data.price is int
+        && request.resource.data.price >= 1
+        && request.resource.data.price <= 10000000
         && request.resource.data.manualStock == 0
-        && request.resource.data.unitCost is int && request.resource.data.unitCost >= 0
-        && request.resource.data.name is string && request.resource.data.name.size() > 0
-        && request.resource.data.category in ['飯捲','冰淇淋','冰品']
+        && request.resource.data.unitCost is int
+        && request.resource.data.unitCost >= 0
+        && request.resource.data.unitCost <= 10000000
         && request.resource.data.recipe is list
         && request.resource.data.addonOptions is list
-        && request.resource.data.rollAddonOptions is list;
-      allow update: if
-        (manager()
-         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-           'name','category','unit','price','unitCost','recipe','addonOptions','rollAddonOptions','hidden','updatedAt'])
-         && request.resource.data.price is int && request.resource.data.price >= 1
-         && request.resource.data.category in ['飯捲','冰淇淋','冰品'])
-        || (superAdmin()
-         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sold','revenue','lastResetBy','lastResetAt'])
-         && request.resource.data.sold == 0 && request.resource.data.revenue == 0
-         && request.resource.data.lastResetBy == request.auth.uid && request.resource.data.lastResetAt == request.time)
+        && request.resource.data.rollAddonOptions is list
+        && request.resource.data.addonOptions.size() <= 12
+        && request.resource.data.rollAddonOptions.size() <= 12
+        && ((request.resource.data.category == '飯捲' && request.resource.data.recipe.size() == 0)
+         || (request.resource.data.category == '冰淇淋'
+           && request.resource.data.recipe.size() > 0
+           && request.resource.data.recipe.size() <= 12
+           && request.resource.data.rollAddonOptions.size() == 0));
+      allow update: if (superAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'sold','revenue','lastResetBy','lastResetAt'
+          ])
+          && request.resource.data.sold == 0
+          && request.resource.data.revenue == 0
+          && request.resource.data.lastResetBy == request.auth.uid
+          && request.resource.data.lastResetAt == request.time)
         || (manager()
-         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['manualStock','lastStockAuditId','updatedAt'])
-         && request.resource.data.manualStock is int && request.resource.data.manualStock >= 0
-         && request.resource.data.updatedAt == request.time)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'name','category','unit','price','unitCost','recipe','addonOptions','rollAddonOptions','hidden','updatedAt'
+          ])
+          && request.resource.data.price is int
+          && request.resource.data.price > 0
+          && request.resource.data.category in ['飯捲','冰淇淋','冰品']
+          && request.resource.data.unitCost is int
+          && request.resource.data.unitCost >= 0
+          && request.resource.data.recipe is list
+          && request.resource.data.rollAddonOptions is list
+          && ((request.resource.data.category == '飯捲' && request.resource.data.recipe.size() == 0)
+           || (request.resource.data.category == '冰淇淋' && request.resource.data.recipe.size() > 0)))
         || (member()
-         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sold','revenue','manualStock','lastOrderId','updatedAt'])
-         && request.resource.data.updatedAt == request.time
-         && request.resource.data.sold is int
-         && request.resource.data.sold > resource.data.get('sold',0)
-         && request.resource.data.revenue is int
-         && request.resource.data.revenue >= resource.data.get('revenue',0)
-         && request.resource.data.lastOrderId is string
-         && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
-         && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].sold == request.resource.data.sold - resource.data.get('sold',0)
-         && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].revenue == request.resource.data.revenue - resource.data.get('revenue',0)
-         && (resource.data.category in ['飯捲','飯卷','飯糰']
-              ? request.resource.data.manualStock >= 0
-                && resource.data.get('manualStock',0) - request.resource.data.manualStock == getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].rollQty
-              : !request.resource.data.diff(resource.data).affectedKeys().hasAny(['manualStock'])))
+          && resource.data.category in ['飯捲','飯卷','飯糰']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'manualStock','lastStockAuditId','updatedAt'
+          ])
+          && request.resource.data.manualStock is int
+          && request.resource.data.manualStock >= 0
+          && request.resource.data.manualStock <= 10000000
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.lastStockAuditId is string
+          && getAfter(/databases/$(database)/documents/audit/$(request.resource.data.lastStockAuditId)).data.action == 'roll.stock.adjust'
+          && getAfter(/databases/$(database)/documents/audit/$(request.resource.data.lastStockAuditId)).data.subjectId == id
+          && getAfter(/databases/$(database)/documents/audit/$(request.resource.data.lastStockAuditId)).data.actorUid == request.auth.uid
+          && getAfter(/databases/$(database)/documents/audit/$(request.resource.data.lastStockAuditId)).data.oldStock == resource.data.get('manualStock',0)
+          && getAfter(/databases/$(database)/documents/audit/$(request.resource.data.lastStockAuditId)).data.newStock == request.resource.data.manualStock)
         || (member()
-         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sold','revenue','manualStock','lastRefundId','updatedAt'])
-         && request.resource.data.updatedAt == request.time
-         && request.resource.data.sold is int && request.resource.data.sold >= 0
-         && request.resource.data.sold < resource.data.get('sold',0)
-         && request.resource.data.revenue is int && request.resource.data.revenue >= 0
-         && request.resource.data.revenue <= resource.data.get('revenue',0)
-         && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.status == 'voided'
-         && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.refundedByUid == request.auth.uid);
-      allow delete: if catalogAdmin() && resource.data.get('sold',0) == 0;
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'sold','revenue','manualStock','lastOrderId','updatedAt'
+          ])
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.sold is int
+          && request.resource.data.sold > resource.data.get('sold', 0)
+          && request.resource.data.revenue is int
+          && request.resource.data.revenue >= resource.data.get('revenue', 0)
+          && resource.data.get('sold', 0) is int
+          && resource.data.get('revenue', 0) is int
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.status == 'valid'
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].sold == request.resource.data.sold - resource.data.get('sold', 0)
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].revenue == request.resource.data.revenue - resource.data.get('revenue', 0)
+          && ((resource.data.category in ['飯捲','飯卷','飯糰']
+            && request.resource.data.manualStock is int
+            && request.resource.data.manualStock >= 0
+            && resource.data.get('manualStock',0) - request.resource.data.manualStock == getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].rollQty)
+           || (resource.data.category in ['冰淇淋','冰品']
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['manualStock']))))
+        || (member()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'sold','revenue','manualStock','lastRefundId','updatedAt'
+          ])
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.sold is int
+          && request.resource.data.sold >= 0
+          && request.resource.data.sold < resource.data.get('sold', 0)
+          && request.resource.data.revenue is int
+          && request.resource.data.revenue >= 0
+          && request.resource.data.revenue <= resource.data.get('revenue', 0)
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.status == 'voided'
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.refundedByUid == request.auth.uid
+          && ((('productDeltas' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)
+            && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].sold == resource.data.get('sold', 0) - request.resource.data.sold
+            && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].revenue == resource.data.get('revenue', 0) - request.resource.data.revenue
+            && ((resource.data.category in ['飯捲','飯卷','飯糰']
+              && request.resource.data.get('manualStock',0) - resource.data.get('manualStock',0) == getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].rollQty)
+             || !(resource.data.category in ['飯捲','飯卷','飯糰'])))
+           || !('productDeltas' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)));
+      allow delete: if catalogDeleter()
+        && resource.data.get('sold',0) == 0
+        && resource.data.get('revenue',0) == 0
+        && (!exists(/databases/$(database)/documents/menuPublic/$(id))
+            || !existsAfter(/databases/$(database)/documents/menuPublic/$(id)));
     }
-
+    match /rollIngredients/{id} {
+      allow read: if member();
+      allow create: if manager()
+        && request.resource.data.keys().hasOnly(['name','unit','defaultPrice','unitCost','hidden','createdAt','updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
+        && request.resource.data.unit is string
+        && request.resource.data.unit.size() > 0 && request.resource.data.unit.size() <= 12
+        && request.resource.data.defaultPrice is int
+        && request.resource.data.defaultPrice >= 0 && request.resource.data.defaultPrice <= 10000000
+        && request.resource.data.unitCost is int
+        && request.resource.data.unitCost >= 0 && request.resource.data.unitCost <= 10000000
+        && request.resource.data.hidden is bool
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if manager()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','unit','defaultPrice','unitCost','hidden','updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
+        && request.resource.data.unit is string
+        && request.resource.data.unit.size() > 0 && request.resource.data.unit.size() <= 12
+        && request.resource.data.defaultPrice is int
+        && request.resource.data.defaultPrice >= 0 && request.resource.data.defaultPrice <= 10000000
+        && request.resource.data.unitCost is int
+        && request.resource.data.unitCost >= 0 && request.resource.data.unitCost <= 10000000
+        && request.resource.data.hidden is bool
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if catalogDeleter();
+    }
     match /ingredients/{id} {
       allow read: if member();
       allow create: if manager()
-        && request.resource.data.name is string && request.resource.data.unit is string
-        && request.resource.data.totalQty is int && request.resource.data.totalQty >= 0
-        && request.resource.data.unitCost is int && request.resource.data.unitCost >= 0
-        && request.resource.data.usedQty == 0;
-      allow update: if
-        (manager()
-         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','unit','totalQty','unitCost','updatedAt'])
-         && request.resource.data.totalQty >= resource.data.get('usedQty',0))
-        || (manager()
-         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalQty','lastStockAuditId','updatedAt'])
-         && request.resource.data.totalQty is int
-         && request.resource.data.totalQty >= resource.data.totalQty)
-        || (superAdmin()
-         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedQty','lastResetBy','lastResetAt'])
-         && request.resource.data.usedQty == resource.data.get('damagedQty',0)
-         && request.resource.data.lastResetBy == request.auth.uid && request.resource.data.lastResetAt == request.time)
-        || (member()
-         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedQty','lastOrderId','updatedAt'])
-         && request.resource.data.updatedAt == request.time
-         && request.resource.data.usedQty is int
-         && request.resource.data.usedQty > resource.data.get('usedQty',0)
-         && request.resource.data.usedQty <= resource.data.totalQty
-         && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
-         && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.needs[id] == request.resource.data.usedQty - resource.data.get('usedQty',0))
-        || (member()
-         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedQty','damagedQty','lastDamageId','updatedAt'])
-         && request.resource.data.updatedAt == request.time
-         && request.resource.data.usedQty is int && request.resource.data.usedQty <= resource.data.totalQty
-         && request.resource.data.usedQty > resource.data.get('usedQty',0)
-         && request.resource.data.damagedQty == resource.data.get('damagedQty',0) + request.resource.data.usedQty - resource.data.get('usedQty',0)
-         && getAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId)).data.actorUid == request.auth.uid)
-        || (member()
-         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedQty','lastRefundId','updatedAt'])
-         && request.resource.data.updatedAt == request.time
-         && request.resource.data.usedQty is int && request.resource.data.usedQty >= 0
-         && request.resource.data.usedQty < resource.data.get('usedQty',0)
-         && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.status == 'voided'
-         && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.refundedByUid == request.auth.uid);
-      allow delete: if catalogAdmin() && resource.data.get('usedQty',0) == 0 && resource.data.get('damagedQty',0) == 0;
-    }
-
-    match /rollIngredients/{id} {
-      allow read: if member();
-      allow create, update: if manager()
-        && request.resource.data.name is string && request.resource.data.name.size() > 0
+        && request.resource.data.name is string
         && request.resource.data.unit is string
-        && request.resource.data.defaultPrice is int && request.resource.data.defaultPrice >= 0
-        && request.resource.data.unitCost is int && request.resource.data.unitCost >= 0;
-      allow delete: if catalogAdmin();
+        && request.resource.data.totalQty is int
+        && request.resource.data.totalQty >= 0
+        && request.resource.data.totalQty <= 10000000
+        && request.resource.data.unitCost is int
+        && request.resource.data.unitCost >= 0
+        && request.resource.data.unitCost <= 10000000
+        && request.resource.data.usedQty == 0;
+      allow update: if (superAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'usedQty','lastResetBy','lastResetAt'
+          ])
+          && request.resource.data.usedQty == (('damagedQty' in resource.data) ? resource.data.damagedQty : 0)
+          && request.resource.data.lastResetBy == request.auth.uid
+          && request.resource.data.lastResetAt == request.time)
+        || (manager()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'name','unit','totalQty','unitCost','updatedAt'
+          ])
+          && request.resource.data.totalQty is int
+          && request.resource.data.totalQty >= resource.data.get('usedQty', 0)
+          && request.resource.data.totalQty <= 10000000)
+        || (member()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'usedQty','damagedQty','lastDamageId','updatedAt'
+          ])
+          && request.resource.data.usedQty is int
+          && request.resource.data.damagedQty is int
+          && request.resource.data.usedQty > resource.data.get('usedQty', 0)
+          && request.resource.data.usedQty <= resource.data.totalQty
+          && request.resource.data.damagedQty == (('damagedQty' in resource.data) ? resource.data.damagedQty : 0)
+             + request.resource.data.usedQty - resource.data.get('usedQty', 0)
+          && request.resource.data.lastDamageId is string
+          && existsAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId))
+          && getAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId)).data.ingredientId == id
+          && getAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId)).data.actorUid == request.auth.uid
+          && getAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId)).data.qty == request.resource.data.usedQty - resource.data.get('usedQty', 0)
+        )
+        || (member()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'usedQty','lastOrderId','updatedAt'
+          ])
+          && request.resource.data.usedQty is int
+          && request.resource.data.usedQty > resource.data.get('usedQty', 0)
+          && request.resource.data.usedQty <= resource.data.totalQty
+          && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId))
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.needs[id] == request.resource.data.usedQty - resource.data.get('usedQty', 0))
+        || (member()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'usedQty','lastRefundId','updatedAt'
+          ])
+          && request.resource.data.usedQty is int
+          && request.resource.data.usedQty >= 0
+          && request.resource.data.usedQty < resource.data.get('usedQty', 0)
+          && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId))
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.refundedByUid == request.auth.uid
+          && (
+            (('needs' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)
+              && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.needs[id] == resource.data.get('usedQty', 0) - request.resource.data.usedQty)
+            || (('usedIngredients' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)
+              && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.usedIngredients[id] == resource.data.get('usedQty', 0) - request.resource.data.usedQty)
+          ));
+      allow delete: if catalogDeleter()
+        && resource.data.get('usedQty',0) == 0
+        && resource.data.get('damagedQty',0) == 0;
     }
     match /damage/{id} {
       allow read: if member();
-      allow create: if member() && request.resource.data.actorUid == request.auth.uid
+      allow create: if member()
+        && request.resource.data.keys().hasOnly([
+          'ingredientId','ingredientName','unit','qty','reason','unitCost','cost',
+          'actorUid','actorName','seat','createdAt'
+        ])
+        && request.resource.data.actorUid == request.auth.uid
         && request.resource.data.createdAt == request.time
-        && request.resource.data.qty is int && request.resource.data.qty >= 1
-        && request.resource.data.ingredientId is string && request.resource.data.cost is int;
+        && request.resource.data.ingredientId is string
+        && request.resource.data.ingredientName is string
+        && request.resource.data.unit is string
+        && request.resource.data.qty is int
+        && request.resource.data.qty >= 1
+        && request.resource.data.qty <= 10000000
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() >= 1
+        && request.resource.data.reason.size() <= 150
+        && request.resource.data.unitCost is int
+        && request.resource.data.cost == request.resource.data.qty * request.resource.data.unitCost
+        && exists(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId))
+        && request.resource.data.unitCost == get(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId)).data.unitCost
+        && request.resource.data.ingredientName == get(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId)).data.name
+        && request.resource.data.unit == get(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId)).data.unit
+        && getAfter(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId)).data.lastDamageId == id
+        && getAfter(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId)).data.usedQty == get(/databases/$(database)/documents/ingredients/$(request.resource.data.ingredientId)).data.usedQty + request.resource.data.qty;
       allow update, delete: if false;
     }
     match /orderCounters/{day} {
       allow read: if member();
       allow create: if member()
-        && request.resource.data.date == day && request.resource.data.lastNo == 1
+        && request.resource.data.keys().hasOnly(['date','lastNo','lastOrderId','lastOrderNo','updatedAt'])
+        && request.resource.data.date == day
+        && request.resource.data.lastNo == 1
+        && request.resource.data.lastOrderId is string
+        && request.resource.data.lastOrderNo is string
         && request.resource.data.updatedAt == request.time
         && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
         && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.orderNo == request.resource.data.lastOrderNo;
@@ -244,6 +346,9 @@ service cloud.firestore {
         && request.resource.data.date == day
         && request.resource.data.lastNo is int
         && request.resource.data.lastNo == resource.data.lastNo + 1
+        && request.resource.data.lastNo <= 999999
+        && request.resource.data.lastOrderId is string
+        && request.resource.data.lastOrderNo is string
         && request.resource.data.updatedAt == request.time
         && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
         && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.orderNo == request.resource.data.lastOrderNo;
@@ -251,175 +356,303 @@ service cloud.firestore {
     }
     match /cashCounts/{id} {
       allow read: if member();
-      allow create: if member() && request.resource.data.actorUid == request.auth.uid
+      allow create: if member()
+        && request.resource.data.keys().hasOnly(['date','openingCash','denominations','countedCash','grossSales','refundAmount','expectedCash','variance','actorUid','actorName','createdAt'])
+        && request.resource.data.actorUid == request.auth.uid
         && request.resource.data.createdAt == request.time
-        && request.resource.data.countedCash is int && request.resource.data.expectedCash is int
+        && request.resource.data.actorName is string
+        && request.resource.data.actorName.size() > 0 && request.resource.data.actorName.size() <= 80
+        && request.resource.data.date is string
+        && request.resource.data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.openingCash is int
+        && request.resource.data.openingCash >= 0 && request.resource.data.openingCash <= 10000000
+        && request.resource.data.grossSales is int
+        && request.resource.data.grossSales >= 0 && request.resource.data.grossSales <= 10000000
+        && request.resource.data.refundAmount is int
+        && request.resource.data.refundAmount >= 0 && request.resource.data.refundAmount <= 10000000
+        && request.resource.data.denominations is map
+        && request.resource.data.denominations.keys().hasOnly(['1000','500','100','50','10','5','1'])
+        && request.resource.data.denominations.keys().hasAll(['1000','500','100','50','10','5','1'])
+        && request.resource.data.denominations.values().size() == 7
+        && request.resource.data.denominations['1000'] is int && request.resource.data.denominations['1000'] >= 0 && request.resource.data.denominations['1000'] <= 10000
+        && request.resource.data.denominations['500'] is int && request.resource.data.denominations['500'] >= 0 && request.resource.data.denominations['500'] <= 10000
+        && request.resource.data.denominations['100'] is int && request.resource.data.denominations['100'] >= 0 && request.resource.data.denominations['100'] <= 10000
+        && request.resource.data.denominations['50'] is int && request.resource.data.denominations['50'] >= 0 && request.resource.data.denominations['50'] <= 10000
+        && request.resource.data.denominations['10'] is int && request.resource.data.denominations['10'] >= 0 && request.resource.data.denominations['10'] <= 10000
+        && request.resource.data.denominations['5'] is int && request.resource.data.denominations['5'] >= 0 && request.resource.data.denominations['5'] <= 10000
+        && request.resource.data.denominations['1'] is int && request.resource.data.denominations['1'] >= 0 && request.resource.data.denominations['1'] <= 10000
+        && request.resource.data.countedCash == request.resource.data.denominations['1000'] * 1000
+          + request.resource.data.denominations['500'] * 500 + request.resource.data.denominations['100'] * 100
+          + request.resource.data.denominations['50'] * 50 + request.resource.data.denominations['10'] * 10
+          + request.resource.data.denominations['5'] * 5 + request.resource.data.denominations['1']
+        && request.resource.data.countedCash <= 10000000
+        && request.resource.data.expectedCash == request.resource.data.openingCash + request.resource.data.grossSales - request.resource.data.refundAmount
+        && request.resource.data.expectedCash >= 0 && request.resource.data.expectedCash <= 10000000
         && request.resource.data.variance == request.resource.data.countedCash - request.resource.data.expectedCash;
       allow update, delete: if false;
     }
-
     match /sales/{id} {
-      function extraAmount(extras, i) { return i < extras.size() ? extras[i].qty * extras[i].price : 0; }
-      function validExtra(extras, i) {
-        return i >= extras.size() || (extras[i].id is string && extras[i].qty is int
-          && extras[i].qty >= 1 && extras[i].price is int && extras[i].price >= 0
-          && extras[i].netAmount is int && extras[i].netAmount >= 0
-          && extras[i].netAmount <= extras[i].price * extras[i].qty);
+      // 【安全規則】逐項驗算：單價以商品資料庫為準，總額不可只靠前端傳值。
+      // Firestore Rules 沒有迴圈，最多驗證 12 組；前端限制不同主商品 7 種，保留規則存取餘裕。
+      function extraAmount(extras, idx) {
+        return idx < extras.size() ? extras[idx].price * extras[idx].qty : 0;
+      }
+      function validExtraAt(extras, idx) {
+        return idx >= extras.size() || (
+          extras[idx] is map
+          && extras[idx].id is string
+          && extras[idx].qty is int && extras[idx].qty >= 1 && extras[idx].qty <= 10000
+          && extras[idx].price is int && extras[idx].price >= 0 && extras[idx].price <= 10000000
+          && extras[idx].netAmount is int && extras[idx].netAmount >= 0
+          && extras[idx].netAmount <= extras[idx].price * extras[idx].qty
+        );
       }
       function validExtras(extras) {
-        return extras is list && extras.size() <= 12
-          && validExtra(extras,0) && validExtra(extras,1) && validExtra(extras,2)
-          && validExtra(extras,3) && validExtra(extras,4) && validExtra(extras,5)
-          && validExtra(extras,6) && validExtra(extras,7) && validExtra(extras,8)
-          && validExtra(extras,9) && validExtra(extras,10) && validExtra(extras,11);
+        return extras is list && extras.size() <= 12 && (
+          validExtraAt(extras, 0) &&
+      validExtraAt(extras, 1) &&
+      validExtraAt(extras, 2) &&
+      validExtraAt(extras, 3) &&
+      validExtraAt(extras, 4) &&
+      validExtraAt(extras, 5) &&
+      validExtraAt(extras, 6) &&
+      validExtraAt(extras, 7) &&
+      validExtraAt(extras, 8) &&
+      validExtraAt(extras, 9) &&
+      validExtraAt(extras, 10) &&
+      validExtraAt(extras, 11)
+        );
       }
-      function extrasSum(e) {
-        return extraAmount(e,0)+extraAmount(e,1)+extraAmount(e,2)+extraAmount(e,3)
-          +extraAmount(e,4)+extraAmount(e,5)+extraAmount(e,6)+extraAmount(e,7)
-          +extraAmount(e,8)+extraAmount(e,9)+extraAmount(e,10)+extraAmount(e,11);
+      function extrasTotal(extras) {
+        return extraAmount(extras, 0) +
+      extraAmount(extras, 1) +
+      extraAmount(extras, 2) +
+      extraAmount(extras, 3) +
+      extraAmount(extras, 4) +
+      extraAmount(extras, 5) +
+      extraAmount(extras, 6) +
+      extraAmount(extras, 7) +
+      extraAmount(extras, 8) +
+      extraAmount(extras, 9) +
+      extraAmount(extras, 10) +
+      extraAmount(extras, 11);
       }
-      function validLine(l) {
-        return l.productId is string && l.price is int && l.price >= 0
-          && l.qty is int && l.qty >= 1 && l.qty <= 10000
-          && l.gross == l.qty * l.price
-          && validExtras(l.extras) && l.addonTotal == extrasSum(l.extras)
-          && l.promoDiscount is int && l.promoDiscount >= 0
-          && l.manualDiscount is int && l.manualDiscount >= 0
-          && l.discount == l.promoDiscount + l.manualDiscount
-          && l.lineTotal == l.gross + l.addonTotal - l.discount
-          && l.lineTotal >= 0
-          && (l.productId == '__manual_other__'
-             ? (l.qty == 1 && l.category == '其它' && l.reason is string && l.reason.size() > 0)
-             : (get(/databases/$(database)/documents/products/$(l.productId)).data.price == l.price
-                && get(/databases/$(database)/documents/products/$(l.productId)).data.name == l.name
-                && get(/databases/$(database)/documents/products/$(l.productId)).data.category == l.category
-                && get(/databases/$(database)/documents/products/$(l.productId)).data.get('hidden',false) != true));
+      function validSaleLineAt(lines, idx) {
+        return idx >= lines.size() || validSaleLine(lines[idx]);
       }
-      function lineValidAt(lines,i) { return i >= lines.size() || validLine(lines[i]); }
-      function lineNet(lines,i) { return i < lines.size() ? lines[i].lineTotal : 0; }
-      function lineBase(lines,i) { return i < lines.size() ? lines[i].gross + lines[i].addonTotal - lines[i].promoDiscount : 0; }
-      function lineManual(lines,i) { return i < lines.size() ? lines[i].manualDiscount : 0; }
-      function linePromo(lines,i) { return i < lines.size() ? lines[i].promoDiscount : 0; }
-      function totalNet(lines) { return lineNet(lines,0)
-           +lineNet(lines,1)
-           +lineNet(lines,2)
-           +lineNet(lines,3)
-           +lineNet(lines,4)
-           +lineNet(lines,5)
-           +lineNet(lines,6)
-           +lineNet(lines,7)
-           +lineNet(lines,8)
-           +lineNet(lines,9)
-           +lineNet(lines,10)
-           +lineNet(lines,11); }
-      function totalBase(lines) { return lineBase(lines,0)
-           +lineBase(lines,1)
-           +lineBase(lines,2)
-           +lineBase(lines,3)
-           +lineBase(lines,4)
-           +lineBase(lines,5)
-           +lineBase(lines,6)
-           +lineBase(lines,7)
-           +lineBase(lines,8)
-           +lineBase(lines,9)
-           +lineBase(lines,10)
-           +lineBase(lines,11); }
-      function totalManual(lines) { return lineManual(lines,0)
-           +lineManual(lines,1)
-           +lineManual(lines,2)
-           +lineManual(lines,3)
-           +lineManual(lines,4)
-           +lineManual(lines,5)
-           +lineManual(lines,6)
-           +lineManual(lines,7)
-           +lineManual(lines,8)
-           +lineManual(lines,9)
-           +lineManual(lines,10)
-           +lineManual(lines,11); }
-      function totalPromo(lines) { return linePromo(lines,0)
-           +linePromo(lines,1)
-           +linePromo(lines,2)
-           +linePromo(lines,3)
-           +linePromo(lines,4)
-           +linePromo(lines,5)
-           +linePromo(lines,6)
-           +linePromo(lines,7)
-           +linePromo(lines,8)
-           +linePromo(lines,9)
-           +linePromo(lines,10)
-           +linePromo(lines,11); }
+      function validSaleLine(line) {
+        return line is map
+          && line.productId is string && line.qty is int && line.qty >= 1 && line.qty <= 10000
+          && line.price is int && line.price >= 0 && line.price <= 10000000
+          && line.gross is int && line.gross == line.price * line.qty
+          && validExtras(line.extras)
+          && line.addonTotal is int && line.addonTotal == extrasTotal(line.extras)
+          && line.promoDiscount is int && line.promoDiscount >= 0
+          && line.manualDiscount is int && line.manualDiscount >= 0
+          && line.discount is int && line.discount == line.promoDiscount + line.manualDiscount
+          && line.discount <= line.gross + line.addonTotal
+          && line.lineTotal is int && line.lineTotal >= 0
+          && line.lineTotal == line.gross + line.addonTotal - line.discount
+          && (line.productId == '__manual_other__'
+              ? (line.qty == 1 && line.category == '其它' && line.name is string
+                 && line.name.size() > 0 && line.name.size() <= 60
+                 && line.reason is string && line.reason.size() > 0 && line.reason.size() <= 160
+                 && line.extras.size() == 0)
+              : validCatalogPrice(line));
+      }
+      function validCatalogPrice(line) {
+        let product = get(/databases/$(database)/documents/products/$(line.productId)).data;
+        return product.price == line.price
+          && product.name == line.name
+          && product.category == line.category
+          && product.unit == line.unit
+          && product.get('hidden', false) != true;
+      }
+      function saleLineNet(lines, idx) {
+        return idx < lines.size() ? lines[idx].lineTotal : 0;
+      }
+      function saleLineBase(lines, idx) {
+        return idx < lines.size() ? lines[idx].gross + lines[idx].addonTotal - lines[idx].promoDiscount : 0;
+      }
+      function saleLineManual(lines, idx) {
+        return idx < lines.size() ? lines[idx].manualDiscount : 0;
+      }
+      function saleLinePromo(lines, idx) {
+        return idx < lines.size() ? lines[idx].promoDiscount : 0;
+      }
+      function consistentSaleAmounts(data) {
+        return (
+          validSaleLineAt(data.lines, 0) &&
+          validSaleLineAt(data.lines, 1) &&
+          validSaleLineAt(data.lines, 2) &&
+          validSaleLineAt(data.lines, 3) &&
+          validSaleLineAt(data.lines, 4) &&
+          validSaleLineAt(data.lines, 5) &&
+          validSaleLineAt(data.lines, 6) &&
+          validSaleLineAt(data.lines, 7) &&
+          validSaleLineAt(data.lines, 8) &&
+          validSaleLineAt(data.lines, 9) &&
+          validSaleLineAt(data.lines, 10) &&
+          validSaleLineAt(data.lines, 11)
+        )
+        && data.total == (
+          saleLineNet(data.lines, 0) +
+          saleLineNet(data.lines, 1) +
+          saleLineNet(data.lines, 2) +
+          saleLineNet(data.lines, 3) +
+          saleLineNet(data.lines, 4) +
+          saleLineNet(data.lines, 5) +
+          saleLineNet(data.lines, 6) +
+          saleLineNet(data.lines, 7) +
+          saleLineNet(data.lines, 8) +
+          saleLineNet(data.lines, 9) +
+          saleLineNet(data.lines, 10) +
+          saleLineNet(data.lines, 11)
+        )
+        && data.baseTotal == (
+          saleLineBase(data.lines, 0) +
+          saleLineBase(data.lines, 1) +
+          saleLineBase(data.lines, 2) +
+          saleLineBase(data.lines, 3) +
+          saleLineBase(data.lines, 4) +
+          saleLineBase(data.lines, 5) +
+          saleLineBase(data.lines, 6) +
+          saleLineBase(data.lines, 7) +
+          saleLineBase(data.lines, 8) +
+          saleLineBase(data.lines, 9) +
+          saleLineBase(data.lines, 10) +
+          saleLineBase(data.lines, 11)
+        )
+        && data.manualDiscount == (
+          saleLineManual(data.lines, 0) +
+          saleLineManual(data.lines, 1) +
+          saleLineManual(data.lines, 2) +
+          saleLineManual(data.lines, 3) +
+          saleLineManual(data.lines, 4) +
+          saleLineManual(data.lines, 5) +
+          saleLineManual(data.lines, 6) +
+          saleLineManual(data.lines, 7) +
+          saleLineManual(data.lines, 8) +
+          saleLineManual(data.lines, 9) +
+          saleLineManual(data.lines, 10) +
+          saleLineManual(data.lines, 11)
+        )
+        && data.promoDiscount is int && data.promoDiscount == (
+          saleLinePromo(data.lines, 0) +
+          saleLinePromo(data.lines, 1) +
+          saleLinePromo(data.lines, 2) +
+          saleLinePromo(data.lines, 3) +
+          saleLinePromo(data.lines, 4) +
+          saleLinePromo(data.lines, 5) +
+          saleLinePromo(data.lines, 6) +
+          saleLinePromo(data.lines, 7) +
+          saleLinePromo(data.lines, 8) +
+          saleLinePromo(data.lines, 9) +
+          saleLinePromo(data.lines, 10) +
+          saleLinePromo(data.lines, 11)
+        )
+        && data.discount is int && data.discount == data.promoDiscount + data.manualDiscount;
+      }
+      function matchingCounter(data, id) {
+        let counter = getAfter(/databases/$(database)/documents/orderCounters/$(data.orderDay)).data;
+        return counter.lastOrderId == id
+          && counter.lastNo == data.orderSequence
+          && counter.lastOrderNo == data.orderNo;
+      }
       allow read: if member();
       allow create: if member()
         && request.resource.data.actorUid == request.auth.uid
-        && request.resource.data.status == 'valid' && request.resource.data.hidden == false
+        && request.resource.data.status == 'valid'
         && request.resource.data.createdAt == request.time
+        && request.resource.data.hidden == false
         && request.resource.data.lines is list
-        && request.resource.data.lines.size() > 0 && request.resource.data.lines.size() <= 12
+        && request.resource.data.lines.size() > 0
+        && request.resource.data.lines.size() <= 12
         && request.resource.data.needs is map
         && request.resource.data.rollNeeds is map
         && request.resource.data.productDeltas is map
-        && request.resource.data.manualDiscount is int && request.resource.data.manualDiscount >= 0
-        && request.resource.data.promoDiscount is int && request.resource.data.promoDiscount >= 0
+        && request.resource.data.manualDiscount is int
         && request.resource.data.baseTotal is int
-        && request.resource.data.total is int && request.resource.data.total >= 0
-        && request.resource.data.baseTotal == totalBase(request.resource.data.lines)
-        && request.resource.data.manualDiscount == totalManual(request.resource.data.lines)
-        && request.resource.data.promoDiscount == totalPromo(request.resource.data.lines)
-        && request.resource.data.discount == request.resource.data.manualDiscount + request.resource.data.promoDiscount
-        && request.resource.data.total == totalNet(request.resource.data.lines)
-        && request.resource.data.total == request.resource.data.baseTotal - request.resource.data.manualDiscount
+        && request.resource.data.baseTotal >= 0
+        && request.resource.data.manualDiscount >= 0
+        && request.resource.data.manualDiscount <= request.resource.data.baseTotal
         && request.resource.data.manualReason is string
-        && (request.resource.data.manualDiscount == 0 || request.resource.data.manualReason.size() > 0)
-        && request.resource.data.paid is int && request.resource.data.paid >= request.resource.data.total
-        && request.resource.data.change == request.resource.data.paid - request.resource.data.total
-        && request.resource.data.orderNo is string
-        && request.resource.data.orderNo.matches('^GD-[0-9]{8}-[0-9]{4,}$')
-        && request.resource.data.orderSequence is int && request.resource.data.orderSequence >= 1
+        && (request.resource.data.manualDiscount == 0
+            || (request.resource.data.manualReason.size() >= 1
+                && request.resource.data.manualReason.size() <= 150))
+        && request.resource.data.total is int
+        && request.resource.data.total == request.resource.data.baseTotal - request.resource.data.manualDiscount
+        && request.resource.data.total >= 0
+        && request.resource.data.total <= 10000000
         && request.resource.data.fingerprint is string
-        && lineValidAt(request.resource.data.lines,0)
-        && lineValidAt(request.resource.data.lines,1)
-        && lineValidAt(request.resource.data.lines,2)
-        && lineValidAt(request.resource.data.lines,3)
-        && lineValidAt(request.resource.data.lines,4)
-        && lineValidAt(request.resource.data.lines,5)
-        && lineValidAt(request.resource.data.lines,6)
-        && lineValidAt(request.resource.data.lines,7)
-        && lineValidAt(request.resource.data.lines,8)
-        && lineValidAt(request.resource.data.lines,9)
-        && lineValidAt(request.resource.data.lines,10)
-        && lineValidAt(request.resource.data.lines,11);
-      allow update: if (member()
-        && resource.data.status == 'valid'
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status','refundReason','refundedByUid','refundedBySeat','refundedByName','refundedAt'])
-        && request.resource.data.status == 'voided'
-        && request.resource.data.refundedByUid == request.auth.uid
-        && request.resource.data.refundedAt == request.time
-        && request.resource.data.refundReason is string && request.resource.data.refundReason.size() > 0)
+        && request.resource.data.fingerprint.size() <= 12000
+        && request.resource.data.paid is int
+        && request.resource.data.paid >= request.resource.data.total
+        && request.resource.data.change == request.resource.data.paid - request.resource.data.total
+        && consistentSaleAmounts(request.resource.data)
+        && (!('orderNo' in request.resource.data) || (
+             request.resource.data.orderNo is string
+             && request.resource.data.orderNo.matches('^GD-[0-9]{8}-[0-9]{4,}$')
+             && request.resource.data.orderDay is string
+             && request.resource.data.orderSequence is int
+             && request.resource.data.orderSequence >= 1
+             && matchingCounter(request.resource.data, id)
+           ));
+      allow update: if (superAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status','refundReason','refundedByUid','refundedBySeat','refundedByName','refundedAt',
+            'hidden','hiddenBy','hiddenAt'
+          ])
+          && request.resource.data.status == 'voided'
+          && request.resource.data.refundReason == '26 號清空測試資料'
+          && request.resource.data.refundedByUid == request.auth.uid
+          && request.resource.data.refundedBySeat is int
+          && request.resource.data.refundedBySeat >= 0
+          && request.resource.data.refundedBySeat <= 99
+          && request.resource.data.refundedBySeat == (superAdmin() ? 26 : get(accountPath()).data.seat)
+          && request.resource.data.refundedByName is string
+          && request.resource.data.refundedByName.size() > 0
+          && request.resource.data.refundedByName.size() <= 80
+          && request.resource.data.refundedAt == request.time
+          && request.resource.data.hidden == true
+          && request.resource.data.hiddenBy == request.auth.uid
+          && request.resource.data.hiddenAt == request.time)
+        || (member()
+          && resource.data.status == 'valid'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status','refundReason','refundedByUid','refundedBySeat','refundedByName','refundedAt'
+          ])
+          && request.resource.data.status == 'voided'
+          && request.resource.data.refundedByUid == request.auth.uid
+          && request.resource.data.refundedBySeat is int
+          && request.resource.data.refundedBySeat == (superAdmin() ? 26 : get(accountPath()).data.seat)
+          && request.resource.data.refundedByName is string
+          && request.resource.data.refundedByName.size() > 0
+          && request.resource.data.refundedByName.size() <= 80
+          && request.resource.data.refundedAt == request.time
+          && request.resource.data.refundReason is string
+          && request.resource.data.refundReason.size() > 0
+          && request.resource.data.refundReason.size() <= 150)
         || (superAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status','refundReason','refundedByUid','refundedBySeat','refundedByName','refundedAt','hidden','hiddenBy','hiddenAt'])
-        && request.resource.data.status == 'voided'
-        && request.resource.data.hidden == true
-        && request.resource.data.refundedByUid == request.auth.uid
-        && request.resource.data.refundedAt == request.time
-        && request.resource.data.hiddenBy == request.auth.uid
-        && request.resource.data.hiddenAt == request.time)
-        || (superAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hidden','hiddenBy','hiddenAt'])
-        && request.resource.data.hidden == true
-        && request.resource.data.hiddenBy == request.auth.uid
-        && request.resource.data.hiddenAt == request.time);
+          && resource.data.status == 'voided'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'hidden','hiddenBy','hiddenAt'
+          ])
+          && request.resource.data.hidden == true
+          && request.resource.data.hiddenBy == request.auth.uid
+          && request.resource.data.hiddenAt == request.time);
       allow delete: if false;
     }
     match /audit/{id} {
       allow read: if manager();
-      allow create: if member() && request.resource.data.actorUid == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.summary is string && request.resource.data.summary.size() <= 300
-        && request.resource.data.hidden == false;
+      allow create: if auditCheck()
+        && request.resource.data.hidden == false
+        && request.resource.data.summary is string
+        && request.resource.data.summary.size() <= 300;
       allow update: if superAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hidden','hiddenBy','hiddenAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'hidden','hiddenBy','hiddenAt'
+        ])
         && request.resource.data.hidden == true
         && request.resource.data.hiddenBy == request.auth.uid
         && request.resource.data.hiddenAt == request.time;
