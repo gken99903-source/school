@@ -120,16 +120,38 @@ service cloud.firestore {
       allow create: if exists(/databases/$(database)/documents/meta/customerOrdering)
         && get(/databases/$(database)/documents/meta/customerOrdering).data.enabled == true
         && guestOrderValid(request.resource.data);
+      function paidLineMatch(lines,items,idx) {
+        // A cashier may change a line quantity. 12 limits groups, not units per group.
+        return idx >= items.size() || (
+          items[idx] is map && items[idx].keys().hasOnly(['productId','qty','extras'])
+          && items[idx].keys().hasAll(['productId','qty','extras'])
+          && items[idx].productId is string && items[idx].productId.size() > 0
+          && items[idx].productId.size() <= 128
+          && items[idx].qty is int && items[idx].qty >= 1 && items[idx].qty <= 10000
+          && items[idx].extras is list && items[idx].extras.size() <= 12
+          && lines[idx].productId == items[idx].productId
+          && lines[idx].qty == items[idx].qty);
+      }
       function linkedPaidSale(data) {
         let sale = getAfter(/databases/$(database)/documents/sales/$(data.saleId)).data;
         return sale.status == 'valid' && sale.customerOrderId == id
-          && sale.actorUid == request.auth.uid && sale.createdAt == request.time;
+          && sale.actorUid == request.auth.uid && sale.createdAt == request.time
+          && data.finalTotal is int && data.finalTotal == sale.total
+          && data.editedByCashier is bool
+          && data.finalItems is list && data.finalItems.size() > 0
+          && data.finalItems.size() <= 12 && data.finalItems.size() == sale.lines.size()
+          && paidLineMatch(sale.lines,data.finalItems,0) && paidLineMatch(sale.lines,data.finalItems,1)
+          && paidLineMatch(sale.lines,data.finalItems,2) && paidLineMatch(sale.lines,data.finalItems,3)
+          && paidLineMatch(sale.lines,data.finalItems,4) && paidLineMatch(sale.lines,data.finalItems,5)
+          && paidLineMatch(sale.lines,data.finalItems,6) && paidLineMatch(sale.lines,data.finalItems,7)
+          && paidLineMatch(sale.lines,data.finalItems,8) && paidLineMatch(sale.lines,data.finalItems,9)
+          && paidLineMatch(sale.lines,data.finalItems,10) && paidLineMatch(sale.lines,data.finalItems,11);
       }
       allow update: if member()
         && resource.data.status == 'pending'
         && request.time < resource.data.createdAt + duration.value(10, 'm')
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','paidAt','paidBy','saleId'])
-        && request.resource.data.diff(resource.data).affectedKeys().hasAll(['status','paidAt','paidBy','saleId'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','paidAt','paidBy','saleId','finalTotal','finalItems','editedByCashier'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasAll(['status','paidAt','paidBy','saleId','finalTotal','finalItems','editedByCashier'])
         && request.resource.data.status == 'paid'
         && request.resource.data.paidAt == request.time
         && request.resource.data.paidBy == request.auth.uid
