@@ -17,6 +17,9 @@ service cloud.firestore {
     function manager() {
       return superAdmin() || (activeAccount() && get(accountPath()).data.role in ['admin','teacher']);
     }
+    function catalogDeleter() {
+      return superAdmin() || (activeAccount() && get(accountPath()).data.role == 'admin');
+    }
     function auditCheck() {
       return member()
         && request.resource.data.actorUid == request.auth.uid
@@ -82,7 +85,8 @@ service cloud.firestore {
         && request.resource.data.unit == getAfter(/databases/$(database)/documents/products/$(id)).data.unit
         && request.resource.data.price == getAfter(/databases/$(database)/documents/products/$(id)).data.price
         && request.resource.data.hidden == getAfter(/databases/$(database)/documents/products/$(id)).data.get('hidden',false);
-      allow delete: if false;
+      allow delete: if catalogDeleter()
+        && !existsAfter(/databases/$(database)/documents/products/$(id));
     }
     // 舊顧客 QR 訂單只允許查詢，禁止再新增或更新。
     match /customerOrders/{id} {
@@ -188,7 +192,11 @@ service cloud.firestore {
               && request.resource.data.get('manualStock',0) - resource.data.get('manualStock',0) == getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].rollQty)
              || !(resource.data.category in ['飯捲','飯卷','飯糰'])))
            || !('productDeltas' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)));
-      allow delete: if false;
+      allow delete: if catalogDeleter()
+        && resource.data.get('sold',0) == 0
+        && resource.data.get('revenue',0) == 0
+        && (!exists(/databases/$(database)/documents/menuPublic/$(id))
+            || !existsAfter(/databases/$(database)/documents/menuPublic/$(id)));
     }
     match /rollIngredients/{id} {
       allow read: if member();
@@ -217,7 +225,7 @@ service cloud.firestore {
         && request.resource.data.unitCost >= 0 && request.resource.data.unitCost <= 10000000
         && request.resource.data.hidden is bool
         && request.resource.data.updatedAt == request.time;
-      allow delete: if false;
+      allow delete: if catalogDeleter();
     }
     match /ingredients/{id} {
       allow read: if member();
@@ -286,7 +294,9 @@ service cloud.firestore {
             || (('usedIngredients' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)
               && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.usedIngredients[id] == resource.data.get('usedQty', 0) - request.resource.data.usedQty)
           ));
-      allow delete: if false;
+      allow delete: if catalogDeleter()
+        && resource.data.get('usedQty',0) == 0
+        && resource.data.get('damagedQty',0) == 0;
     }
     match /damage/{id} {
       allow read: if member();
