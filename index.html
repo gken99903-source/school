@@ -1782,7 +1782,7 @@ async function checkout(options={}){
   const rejected=permissionRejected||['invalid-argument','failed-precondition'].includes(e?.code);
   state.pendingVerification=true;renderPendingOrders();
   const reason=permissionRejected
-   ?'Firestore 拒絕結帳交易。規則可能已發布；需核對舊商品欄位、規則條件與交易寫入內容，請勿直接重送或再次收款。'
+   ?'Firestore 拒絕結帳交易：目前商品／銷售規則不接受這筆寫入。請核對後再操作，勿重新收款。'
    :(rejected?'資料庫拒絕交易：':'交易結果尚未確認：')+String(e?.message||'未知錯誤');
   $('verifyStatus').textContent=reason+' 已保留「未回傳訂單」，請先向伺服器核對。舊 QR 暫存只能安全解除，不可重送或重複收款。';
   $('verifyAgainBtn').classList.remove('hidden');$('backCart').disabled=true;
