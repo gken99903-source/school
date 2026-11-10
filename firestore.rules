@@ -371,7 +371,8 @@ service cloud.firestore {
         && request.resource.data.lastOrderId is string
         && request.resource.data.lastOrderNo is string
         && request.resource.data.updatedAt == request.time
-        && currentCounterSaleMatches(request.resource.data);
+        && currentCounterSaleMatches(request.resource.data)
+        && counterStockMatches(request.resource.data);
       allow update: if member()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastNo','lastOrderId','lastOrderNo','updatedAt'])
         && request.resource.data.date == day
@@ -381,7 +382,8 @@ service cloud.firestore {
         && request.resource.data.lastOrderId is string
         && request.resource.data.lastOrderNo is string
         && request.resource.data.updatedAt == request.time
-        && currentCounterSaleMatches(request.resource.data);
+        && currentCounterSaleMatches(request.resource.data)
+        && counterStockMatches(request.resource.data);
       allow delete: if false;
     }
     match /cashCounts/{id} {
@@ -550,6 +552,10 @@ service cloud.firestore {
         return catalogAddonsMatch(line.extras, product)
           && catalogRecipeNeedsCovered(line, product)
           && line.productId in request.resource.data.productDeltas
+          && (product.category in ['飯捲','飯卷','飯糰']
+              ? (line.productId in request.resource.data.rollNeeds
+                 && request.resource.data.rollNeeds[line.productId] >= line.qty)
+              : !(line.productId in request.resource.data.rollNeeds))
           && product.price == line.price
           && product.name == line.name
           && product.category == line.category
@@ -566,7 +572,6 @@ service cloud.firestore {
         return idx >= data.productDeltas.keys().size() || deltaProductMatchesId(data, data.productDeltas.keys()[idx]);
       }
       function deltaProductMatchesId(data, productId) {
-        let product = getAfter(/databases/$(database)/documents/products/$(productId)).data;
         return productId is string
           && data.productDeltas[productId] is map
           && data.productDeltas[productId].sold is int
@@ -574,12 +579,9 @@ service cloud.firestore {
           && data.productDeltas[productId].revenue is int
           && data.productDeltas[productId].revenue >= 0
           && data.productDeltas[productId].rollQty is int
-          && (product.category in ['飯捲','飯卷','飯糰']
-               ? (data.productDeltas[productId].rollQty == data.productDeltas[productId].sold
-                 && data.rollNeeds[productId] == data.productDeltas[productId].rollQty)
-               : data.productDeltas[productId].rollQty == 0)
-          && product.lastOrderId == id
-          && product.updatedAt == request.time
+          && (productId in data.rollNeeds
+              ? data.rollNeeds[productId] == data.productDeltas[productId].rollQty
+              : data.productDeltas[productId].rollQty == 0)
           && data.productDeltas[productId].sold == (
             sumSold(data.lines,productId,0) + sumSold(data.lines,productId,1)
             + sumSold(data.lines,productId,2) + sumSold(data.lines,productId,3)
@@ -729,8 +731,11 @@ service cloud.firestore {
         && request.resource.data.paid is int
         && request.resource.data.paid >= request.resource.data.total
         && request.resource.data.change == request.resource.data.paid - request.resource.data.total
+        // Delta values are checked against every sale line without re-reading all product documents.
+        // The product writes validate the delta against the real post-transaction stock documents.
         && allProductDeltasMatch(request.resource.data)
-        && saleNeedsHaveStockUpdatesData(id, request.resource.data)
+        // Ingredient writes are verified in the daily counter's rule (a separate write operation)
+        // to avoid exceeding the ten-access limit for a single sale document.
         && consistentSaleAmounts(request.resource.data)
         && request.resource.data.orderNo is string
         && request.resource.data.orderNo.matches('^GD-[0-9]{8}-[0-9]{4,}$')
