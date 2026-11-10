@@ -1,3 +1,4 @@
+// 【QR 結帳規則配對識別】QR-ATOMIC-20261110
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -423,13 +424,22 @@ service cloud.firestore {
         && stock.lastOrderId == saleId
         && stock.updatedAt == request.time;
     }
-    function saleNeedsHaveStockUpdates(saleId) {
-      let sale = getAfter(/databases/$(database)/documents/sales/$(saleId)).data;
+    function saleNeedsHaveStockUpdatesData(saleId, sale) {
       return sale.needs is map && sale.needs.keys().size() <= 8
         && orderIngredientUpdated(saleId,sale,0) && orderIngredientUpdated(saleId,sale,1)
         && orderIngredientUpdated(saleId,sale,2) && orderIngredientUpdated(saleId,sale,3)
         && orderIngredientUpdated(saleId,sale,4) && orderIngredientUpdated(saleId,sale,5)
         && orderIngredientUpdated(saleId,sale,6) && orderIngredientUpdated(saleId,sale,7);
+    }
+    function saleNeedsHaveStockUpdates(saleId) {
+      let sale = getAfter(/databases/$(database)/documents/sales/$(saleId)).data;
+      return saleNeedsHaveStockUpdatesData(saleId, sale);
+    }
+    // QR sales validate all ingredient stock writes from the sales-create rule.
+    // Manual sales retain stock verification on the daily counter write.
+    function counterStockMatches(data) {
+      let sale = getAfter(/databases/$(database)/documents/sales/$(data.lastOrderId)).data;
+      return ('customerOrderId' in sale) || saleNeedsHaveStockUpdates(data.lastOrderId);
     }
     function currentCounterSaleMatches(data) {
       let sale = getAfter(/databases/$(database)/documents/sales/$(data.lastOrderId)).data;
@@ -448,7 +458,7 @@ service cloud.firestore {
         && request.resource.data.lastOrderNo is string
         && request.resource.data.updatedAt == request.time
         && currentCounterSaleMatches(request.resource.data)
-        && saleNeedsHaveStockUpdates(request.resource.data.lastOrderId);
+        && counterStockMatches(request.resource.data);
       allow update: if member()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastNo','lastOrderId','lastOrderNo','updatedAt'])
         && request.resource.data.date == day
@@ -459,7 +469,7 @@ service cloud.firestore {
         && request.resource.data.lastOrderNo is string
         && request.resource.data.updatedAt == request.time
         && currentCounterSaleMatches(request.resource.data)
-        && saleNeedsHaveStockUpdates(request.resource.data.lastOrderId);
+        && counterStockMatches(request.resource.data);
       allow delete: if false;
     }
     match /cashCounts/{id} {
@@ -817,6 +827,9 @@ service cloud.firestore {
         && request.resource.data.paid is int
         && request.resource.data.paid >= request.resource.data.total
         && request.resource.data.change == request.resource.data.paid - request.resource.data.total
+        // QR sale: check the ingredient documents atomically here, not twice from counter.
+        // The customer-order link and its paid status are still validated above.
+        && (!('customerOrderId' in request.resource.data) || saleNeedsHaveStockUpdatesData(id, request.resource.data))
         && allProductDeltasMatch(request.resource.data)
         && consistentSaleAmounts(request.resource.data)
         && request.resource.data.orderNo is string
