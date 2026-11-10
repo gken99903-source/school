@@ -1,4 +1,3 @@
-// 【QR 結帳規則配對識別】QR-ATOMIC-20261110
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -44,18 +43,12 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /meta/{id} {
-      allow read: if member() || id == 'customerOrdering';
+      allow read: if member();
       allow create, update: if (manager() && id == 'settings'
         && request.resource.data.sharedCost is int
         && request.resource.data.sharedCost >= 0
         && request.resource.data.stallName is string
-        && request.resource.data.stallName.size() <= 45)
-        || (manager() && id == 'customerOrdering'
-          && request.resource.data.keys().hasOnly(['enabled','updatedAt','updatedBy'])
-          && request.resource.data.keys().hasAll(['enabled','updatedAt','updatedBy'])
-          && request.resource.data.enabled is bool
-          && request.resource.data.updatedAt == request.time
-          && request.resource.data.updatedBy == request.auth.uid);
+        && request.resource.data.stallName.size() <= 45);
       allow delete: if false;
     }
     match /promotions/{id} {
@@ -91,87 +84,10 @@ service cloud.firestore {
         && request.resource.data.hidden == getAfter(/databases/$(database)/documents/products/$(id)).data.get('hidden',false);
       allow delete: if false;
     }
-    // 10 分鐘未付款顧客訂單。公開僅能用高熵 ID 單筆讀取，不可列舉。
+    // 舊版 QR 訂單唯讀存檔：僅登入成員可核對，禁止再建立或修改。
     match /customerOrders/{id} {
-      function validLine(l) {
-        return l is map && l.keys().hasOnly(['productId','qty','extras'])
-          && l.keys().hasAll(['productId','qty','extras'])
-          && l.productId is string && l.productId.size() > 0 && l.productId.size() <= 128
-          && l.qty is int && l.qty >= 1 && l.qty <= 12
-          && l.extras is list && l.extras.size() <= 12;
-      }
-      function lineValidAt(data,n) {
-        return n >= data.items.size() || validLine(data.items[n]);
-      }
-      function guestOrderValid(data) {
-        return id.matches('^[0-9a-f]{32}$')
-          && data.keys().hasOnly(['status','createdAt','items','estimateTotal'])
-          && data.keys().hasAll(['status','createdAt','items','estimateTotal'])
-          && data.status == 'pending' && data.createdAt == request.time
-          && data.estimateTotal is int && data.estimateTotal >= 0 && data.estimateTotal <= 10000000
-          && data.items is list && data.items.size() > 0 && data.items.size() <= 12
-          && lineValidAt(data,0) && lineValidAt(data,1) && lineValidAt(data,2)
-          && lineValidAt(data,3) && lineValidAt(data,4) && lineValidAt(data,5)
-          && lineValidAt(data,6) && lineValidAt(data,7) && lineValidAt(data,8)
-          && lineValidAt(data,9) && lineValidAt(data,10) && lineValidAt(data,11);
-      }
-      allow get: if true;
-      allow list: if member();
-      // Service may be disabled by managers; rule enforces it even if public HTML is modified.
-      allow create: if exists(/databases/$(database)/documents/meta/customerOrdering)
-        && get(/databases/$(database)/documents/meta/customerOrdering).data.enabled == true
-        && guestOrderValid(request.resource.data);
-      function paidLineMatch(lines,items,idx) {
-        // A cashier may change a line quantity. 12 limits groups, not units per group.
-        return idx >= items.size() || (
-          items[idx] is map && items[idx].keys().hasOnly(['productId','qty','extras'])
-          && items[idx].keys().hasAll(['productId','qty','extras'])
-          && items[idx].productId is string && items[idx].productId.size() > 0
-          && items[idx].productId.size() <= 128
-          && items[idx].qty is int && items[idx].qty >= 1 && items[idx].qty <= 10000
-          && items[idx].extras is list && items[idx].extras.size() <= 12
-          && lines[idx].productId == items[idx].productId
-          && lines[idx].qty == items[idx].qty);
-      }
-      function linkedPaidSale(data) {
-        let sale = getAfter(/databases/$(database)/documents/sales/$(data.saleId)).data;
-        return sale.status == 'valid' && sale.customerOrderId == id
-          && sale.actorUid == request.auth.uid && sale.createdAt == request.time
-          // New receipt mode verifies final price and edited items.
-          // Legacy mode only changes status, paidAt, paidBy and saleId.
-          && (
-            (!('finalTotal' in data) && !('finalItems' in data) && !('editedByCashier' in data))
-            || (
-              data.finalTotal is int && data.finalTotal == sale.total
-              && data.editedByCashier is bool
-              && data.finalItems is list && data.finalItems.size() > 0
-              && data.finalItems.size() <= 12 && data.finalItems.size() == sale.lines.size()
-              && paidLineMatch(sale.lines,data.finalItems,0) && paidLineMatch(sale.lines,data.finalItems,1)
-              && paidLineMatch(sale.lines,data.finalItems,2) && paidLineMatch(sale.lines,data.finalItems,3)
-              && paidLineMatch(sale.lines,data.finalItems,4) && paidLineMatch(sale.lines,data.finalItems,5)
-              && paidLineMatch(sale.lines,data.finalItems,6) && paidLineMatch(sale.lines,data.finalItems,7)
-              && paidLineMatch(sale.lines,data.finalItems,8) && paidLineMatch(sale.lines,data.finalItems,9)
-              && paidLineMatch(sale.lines,data.finalItems,10) && paidLineMatch(sale.lines,data.finalItems,11)
-            )
-          );
-      }
-      allow update: if member()
-        && resource.data.status == 'pending'
-        && request.time < resource.data.createdAt + duration.value(10, 'm')
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','paidAt','paidBy','saleId','finalTotal','finalItems','editedByCashier'])
-        && request.resource.data.diff(resource.data).affectedKeys().hasAll(['status','paidAt','paidBy','saleId'])
-        && (
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['finalTotal','finalItems','editedByCashier'])
-          || request.resource.data.diff(resource.data).affectedKeys().hasAll(['finalTotal','finalItems','editedByCashier'])
-        )
-        && request.resource.data.status == 'paid'
-        && request.resource.data.paidAt == request.time
-        && request.resource.data.paidBy == request.auth.uid
-        && request.resource.data.saleId is string
-        && linkedPaidSale(request.resource.data);
-      // 學生收銀員可刪除未付廢單；到期後開站的訪客也可清理。
-      allow delete: if resource.data.status == 'pending' &&
-        (member() || request.time >= resource.data.createdAt + duration.value(10, 'm'));
+      allow get: if member();
+      allow list, create, update, delete: if false;
     }
     match /products/{id} {
       function linkedSaleProductChange() {
@@ -435,11 +351,9 @@ service cloud.firestore {
       let sale = getAfter(/databases/$(database)/documents/sales/$(saleId)).data;
       return saleNeedsHaveStockUpdatesData(saleId, sale);
     }
-    // QR sales validate all ingredient stock writes from the sales-create rule.
-    // Manual sales retain stock verification on the daily counter write.
+    // 人工結帳仍由每日流水號更新驗證原料同步扣庫存。
     function counterStockMatches(data) {
-      let sale = getAfter(/databases/$(database)/documents/sales/$(data.lastOrderId)).data;
-      return ('customerOrderId' in sale) || saleNeedsHaveStockUpdates(data.lastOrderId);
+      return saleNeedsHaveStockUpdates(data.lastOrderId);
     }
     function currentCounterSaleMatches(data) {
       let sale = getAfter(/databases/$(database)/documents/sales/$(data.lastOrderId)).data;
@@ -780,11 +694,6 @@ service cloud.firestore {
         )
         && data.discount is int && data.discount == data.promoDiscount + data.manualDiscount;
       }
-      function customerPaymentMatches(sale) {
-        let order = getAfter(/databases/$(database)/documents/customerOrders/$(sale.customerOrderId)).data;
-        return order.status == 'paid' && order.saleId == id
-          && order.paidBy == request.auth.uid && order.paidAt == request.time;
-      }
       function counterMatches(sale) {
         let counter = getAfter(/databases/$(database)/documents/orderCounters/$(sale.orderDay)).data;
         return counter.lastOrderId == id
@@ -794,10 +703,7 @@ service cloud.firestore {
       allow read: if member();
       allow create: if member()
         && request.resource.data.actorUid == request.auth.uid
-        && (!('customerOrderId' in request.resource.data) || (
-             request.resource.data.customerOrderId is string
-             && customerPaymentMatches(request.resource.data)
-           ))
+        && !('customerOrderId' in request.resource.data)
         && request.resource.data.status == 'valid'
         && request.resource.data.createdAt == request.time
         && request.resource.data.hidden == false
@@ -827,9 +733,6 @@ service cloud.firestore {
         && request.resource.data.paid is int
         && request.resource.data.paid >= request.resource.data.total
         && request.resource.data.change == request.resource.data.paid - request.resource.data.total
-        // QR sale: check the ingredient documents atomically here, not twice from counter.
-        // The customer-order link and its paid status are still validated above.
-        && (!('customerOrderId' in request.resource.data) || saleNeedsHaveStockUpdatesData(id, request.resource.data))
         && allProductDeltasMatch(request.resource.data)
         && consistentSaleAmounts(request.resource.data)
         && request.resource.data.orderNo is string
