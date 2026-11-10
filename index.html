@@ -249,11 +249,12 @@ dialog .modal-actions{position:sticky;bottom:0;background:var(--panel);z-index:2
 #gyAskPhrase{font-size:16px;min-height:44px}
 #gyDoneOverlay{position:fixed;inset:0;z-index:99999;background:rgba(8,27,34,.62);display:grid;place-items:center;pointer-events:none}
 #gyDoneOverlay.hidden{display:none}
-.gy-done-box{background:var(--card,#fff);border:1px solid var(--border,#dde8ee);border-radius:22px;padding:30px 46px;text-align:center;box-shadow:0 18px 65px #0003;color:var(--text,#163045)}
-.gy-check-circle{height:78px;width:78px;border:4px solid #24a776;border-radius:50%;display:grid;place-items:center;color:#24a776;margin:auto auto 13px;animation:gyPop .4s ease-out both}
-.gy-check-svg{height:48px;width:48px;fill:none;stroke:currentColor;stroke-width:6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:67;stroke-dashoffset:67;animation:gyStroke .45s .15s ease-out forwards}
+.gy-done-box{background:var(--panel,#fff);border:1px solid var(--border,#dde8ee);border-radius:22px;padding:30px 46px;text-align:center;box-shadow:0 18px 65px #0003;color:var(--ink,#163045);animation:gyBoxIn .25s ease-out both}
+.gy-check-circle{height:78px;width:78px;border:4px solid #24a776;border-radius:50%;display:grid;place-items:center;color:#24a776;margin:auto auto 13px;animation:gyPop .36s ease-out both}
+.gy-check-svg{height:48px;width:48px;fill:none;stroke:currentColor;stroke-width:6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100;stroke-dashoffset:100;animation:gyStroke .5s .12s ease-out forwards}
 @keyframes gyStroke{to{stroke-dashoffset:0}}@keyframes gyPop{from{opacity:0;transform:scale(.65)}to{opacity:1;transform:scale(1)}}
-@media(prefers-reduced-motion:reduce){.gy-check-circle,.gy-check-svg{animation:none;stroke-dashoffset:0}}
+@keyframes gyBoxIn{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.gy-done-box,.gy-check-circle,.gy-check-svg{animation:none;stroke-dashoffset:0}}
 #pendingOrdersTab .pending-item{margin:12px 0;padding:16px;border:1px solid var(--border);border-radius:14px;background:var(--card)}
 #pendingOrdersTab .pending-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 #pendingOrdersTab .pending-actions button{min-height:44px}
@@ -339,7 +340,33 @@ body.dark .product.sold-out{background:#542a30}.product.sold-out button:disabled
 .checkout-settings-grid{display:grid;gap:13px}
 .checkout-setting{display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid var(--border);border-radius:12px;padding:12px}
 .checkout-setting label{font-weight:700;flex:1}
-.checkout-setting input[type="checkbox"]{min-width:23px;min-height:23px;width:23px;accent-color:var(--accent)}
+/* 個人設定滑動開關：保留原生 checkbox、鍵盤/觸控操作與既有儲存邏輯。 */
+#personalSettingsDialog .checkout-setting input[type="checkbox"]{
+  -webkit-appearance:none;appearance:none;box-sizing:border-box;position:relative;
+  flex:0 0 54px;display:block;width:54px;min-width:54px;height:32px;min-height:32px;
+  margin:0;padding:0;border:1px solid var(--border);border-radius:999px;
+  background:var(--surface);cursor:pointer;outline-offset:3px;
+  transition:background-color .18s ease,border-color .18s ease
+}
+#personalSettingsDialog .checkout-setting input[type="checkbox"]::before{
+  content:"";display:block;position:absolute;left:3px;top:3px;width:24px;height:24px;
+  border-radius:50%;background:var(--field);box-shadow:0 1px 4px #0003;
+  transition:transform .18s ease,background-color .18s ease
+}
+#personalSettingsDialog .checkout-setting input[type="checkbox"]:checked{
+  background:var(--accent);border-color:var(--accent)
+}
+#personalSettingsDialog .checkout-setting input[type="checkbox"]:checked::before{
+  transform:translateX(22px);background:#fff
+}
+#personalSettingsDialog .checkout-setting input[type="checkbox"]:focus-visible{
+  outline:3px solid #eda460
+}
+#personalSettingsDialog .checkout-setting input[type="checkbox"]:disabled{opacity:.5;cursor:not-allowed}
+@media(prefers-reduced-motion:reduce){
+ #personalSettingsDialog .checkout-setting input[type="checkbox"],
+ #personalSettingsDialog .checkout-setting input[type="checkbox"]::before{transition:none}
+}
 .checkout-setting p{font-size:12px;margin:3px 0 0;color:var(--sub)}
 .cart-tools{display:flex;gap:8px;flex-wrap:wrap;margin:9px 0 3px}
 .cart-tools button{min-height:42px}
@@ -422,9 +449,9 @@ body.compact-cashier .products{gap:7px}
 <dialog id="otherDialog"><div class="modal-head"><h3>其它品項</h3></div><form id="otherForm"><div class="modal-body"><div class="field"><label for="otherName">品項名稱</label><input id="otherName" maxlength="60" required placeholder="例如：臨時補收費用"></div><div class="field"><label for="otherReason">原因</label><textarea id="otherReason" maxlength="160" rows="3" required placeholder="請填寫記帳原因"></textarea></div><div class="field"><label for="otherPrice">價格（元）</label><input id="otherPrice" type="number" inputmode="numeric" min="0" max="10000000" step="1" required></div></div><div class="modal-actions"><button class="secondary" type="button" data-close="otherDialog">取消</button><button class="primary" type="submit">加入結帳清單</button></div></form></dialog><dialog id="cartDialog"><div class="modal-head"><h3>本次結帳清單</h3></div><div class="modal-body"><div class="cart-tools"><button class="secondary" id="openSplitCart" type="button">分開結帳</button></div><div id="cartLines"></div><div id="promoInfo" class="hint"></div><div class="row" style="margin-top:16px"><strong>合計</strong><strong class="total" id="cartDialogTotal">NT$0</strong></div></div><div class="modal-actions"><button class="secondary" data-close="cartDialog">繼續選購</button><button id="toConfirm" class="primary">核對訂單</button></div></dialog>
 <dialog id="confirmDialog"><div class="modal-head"><h3>確認完成結帳？</h3></div><div class="modal-body"><div id="confirmLines"></div><div id="manualDiscountArea" class="field" style="margin-top:14px"><label>給予優惠（直接折抵金額，元）</label><input id="manualDiscount" type="number" min="0" step="1" value="0" inputmode="numeric"><div id="manualReasonField" class="field hidden"><label>優惠原因（必填）</label><textarea id="manualReason" maxlength="150" rows="2" placeholder="例如：活動折扣、補償差額"></textarea></div></div><div class="row"><strong>原價／套餐後</strong><strong id="beforeManualTotal">NT$0</strong></div><div class="row" style="margin:15px 0"><strong>折扣後應收</strong><span><strong id="confirmTotal" class="total">NT$0</strong><button id="exactPaidBtn" class="secondary" type="button">剛好</button></span></div><div class="quick-pay" aria-label="快速選擇實收金額"><button type="button" class="secondary" data-fast-pay="50">收 NT$50</button><button type="button" class="secondary" data-fast-pay="100">收 NT$100</button><button type="button" class="secondary" data-fast-pay="500">收 NT$500</button><button type="button" class="secondary" data-fast-pay="1000">收 NT$1000</button></div><div id="verifyStatus" class="muted" aria-live="polite"></div><div class="field"><label>實收金額（元）</label><input id="paid" type="number" min="0" step="1"></div><div class="row"><span>找零</span><strong id="change" class="total">NT$0</strong></div></div><div class="modal-actions"><button id="backCart" class="secondary">返回</button><button id="verifyAgainBtn" class="secondary hidden" type="button">核對資料庫結果</button><button id="confirmCheckout" class="primary">確認結帳</button></div></dialog>
 <dialog id="gyAskDialog"><div class="modal-head"><h3 id="gyAskTitle">再次確認</h3></div><div class="modal-body"><p id="gyAskMessage"></p><div id="gyAskPhraseBox" class="field hidden"><label id="gyAskPhraseLabel">再次輸入確認文字</label><input id="gyAskPhrase" type="text" autocomplete="off"></div></div><div class="modal-actions"><button id="gyAskCancel" type="button" class="secondary">取消</button><button id="gyAskYes" type="button" class="primary">確定</button></div></dialog>
-<div id="gyDoneOverlay" class="hidden" aria-hidden="true"><div class="gy-done-box"><div class="gy-check-circle"><svg viewBox="0 0 52 52" class="gy-check-svg" aria-hidden="true"><path d="M10 26 L22 38 L43 13"/></svg></div><strong>資料庫已確認</strong></div></div>
+<div id="gyDoneOverlay" class="hidden" aria-hidden="true"><div class="gy-done-box"><div class="gy-check-circle"><svg viewBox="0 0 52 52" class="gy-check-svg" aria-hidden="true"><path d="M10 26 L22 38 L43 13" pathLength="100"/></svg></div><strong>資料庫已確認</strong></div></div>
 <!-- 【功能區 HTML-17】補貨、分開結帳、退款對話框 -->
-<dialog id="restockDialog"><div class="modal-head"><h3>補貨入庫</h3></div><div class="modal-body"><p class="muted">依資料庫目前庫存加上數量；不會覆蓋其他人的銷售紀錄。</p><div class="field"><label for="restockKind">補貨種類</label><select id="restockKind"><option value="roll">飯捲口味</option><option value="ingredient">冰淇淋原料（管理員）</option></select></div><div class="field"><label for="restockTarget">補貨品項</label><select id="restockTarget"></select></div><div class="field"><label for="restockQty">新增數量</label><input id="restockQty" type="number" min="1" max="10000000" step="1" value="1" inputmode="numeric"></div><div class="field"><label for="restockNote">原因（選填）</label><input id="restockNote" maxlength="100" placeholder="例如：新一批飯捲送達"></div><p id="restockStatus" class="muted"></p></div><div class="modal-actions"><button type="button" class="secondary" data-close="restockDialog">取消</button><button type="button" class="secondary hidden" id="restockCheck">核對上筆補貨</button><button type="button" class="primary" id="confirmRestock">確認補貨</button></div></dialog><dialog id="receiptDialog"><div class="modal-head"><h3>電子收據</h3></div><div class="modal-body"><div id="receiptSheet"></div></div><div class="modal-actions"><button class="secondary" type="button" data-close="receiptDialog">關閉</button><button class="secondary" type="button" id="copyReceipt">複製文字</button><button class="primary" type="button" id="saveReceiptPng">儲存圖片</button></div></dialog><dialog id="personalSettingsDialog"><div class="modal-head"><h3>個人化收銀設定</h3></div><div class="modal-body"><p class="muted">此帳號在目前裝置上的偏好，不會影響其他收銀員。</p><div class="checkout-settings-grid"><div class="checkout-setting"><div><label for="settingBig">收銀大按鈕模式</label><p>放大商品、加減與結帳按鈕</p></div><input type="checkbox" id="settingBig"></div><div class="checkout-setting"><div><label for="settingCompact">緊湊商品排列</label><p>讓同一畫面顯示更多商品</p></div><input type="checkbox" id="settingCompact"></div><div class="checkout-setting"><div><label for="settingSound">收銀操作音效</label><p>加入商品、操作失敗、結帳成功</p></div><input type="checkbox" id="settingSound"></div><div class="checkout-setting"><div><label for="settingDark">深色模式</label><p>此帳號在這台裝置獨立記錄</p></div><input type="checkbox" id="settingDark"></div></div></div><div class="modal-actions"><button type="button" class="primary" data-close="personalSettingsDialog">完成</button></div></dialog>
+<dialog id="restockDialog"><div class="modal-head"><h3>補貨入庫</h3></div><div class="modal-body"><p class="muted">依資料庫目前庫存加上數量；不會覆蓋其他人的銷售紀錄。</p><div class="field"><label for="restockKind">補貨種類</label><select id="restockKind"><option value="roll">飯捲口味</option><option value="ingredient">冰淇淋原料（管理員）</option></select></div><div class="field"><label for="restockTarget">補貨品項</label><select id="restockTarget"></select></div><div class="field"><label for="restockQty">新增數量</label><input id="restockQty" type="number" min="1" max="10000000" step="1" value="1" inputmode="numeric"></div><div class="field"><label for="restockNote">原因（選填）</label><input id="restockNote" maxlength="100" placeholder="例如：新一批飯捲送達"></div><p id="restockStatus" class="muted"></p></div><div class="modal-actions"><button type="button" class="secondary" data-close="restockDialog">取消</button><button type="button" class="secondary hidden" id="restockCheck">核對上筆補貨</button><button type="button" class="primary" id="confirmRestock">確認補貨</button></div></dialog><dialog id="receiptDialog"><div class="modal-head"><h3>電子收據</h3></div><div class="modal-body"><div id="receiptSheet"></div></div><div class="modal-actions"><button class="secondary" type="button" data-close="receiptDialog">關閉</button><button class="secondary" type="button" id="copyReceipt">複製文字</button><button class="primary" type="button" id="saveReceiptPng">儲存圖片</button></div></dialog><dialog id="personalSettingsDialog"><div class="modal-head"><h3>個人化收銀設定</h3></div><div class="modal-body"><p class="muted">此帳號在目前裝置上的偏好，不會影響其他收銀員。</p><div class="checkout-settings-grid"><div class="checkout-setting"><div><label for="settingBig">收銀大按鈕模式</label><p>放大商品、加減與結帳按鈕</p></div><input type="checkbox" role="switch" id="settingBig"></div><div class="checkout-setting"><div><label for="settingCompact">緊湊商品排列</label><p>讓同一畫面顯示更多商品</p></div><input type="checkbox" role="switch" id="settingCompact"></div><div class="checkout-setting"><div><label for="settingSound">收銀操作音效</label><p>加入商品、操作失敗、結帳成功</p></div><input type="checkbox" role="switch" id="settingSound"></div><div class="checkout-setting"><div><label for="settingDark">深色模式</label><p>此帳號在這台裝置獨立記錄</p></div><input type="checkbox" role="switch" id="settingDark"></div></div></div><div class="modal-actions"><button type="button" class="primary" data-close="personalSettingsDialog">完成</button></div></dialog>
 <dialog id="splitCartDialog"><div class="modal-head"><h3>分開結帳</h3></div><div class="modal-body"><p class="muted">指定第一筆要付款的數量，剩餘商品將存入「暫存訂單」，稍後可獨立付款。每筆都會重新計算套餐優惠；未付款不扣庫存。</p><div id="splitLines"></div><div class="split-preview"><div>第一筆應收<strong id="splitFirstTotal">NT$0</strong></div><div>後續暫存應收<strong id="splitRestTotal">NT$0</strong></div></div><p id="splitInfo" class="muted" role="status"></p></div><div class="modal-actions"><button type="button" class="secondary" data-close="splitCartDialog">取消</button><button type="button" id="confirmSplit" class="primary">拆分並先結第一筆</button></div></dialog>
 <dialog id="refundDialog"><div class="modal-head"><h3>退款確認</h3></div><div class="modal-body"><p id="refundDescription"></p><div class="field"><label>退款原因</label><textarea id="refundReason" rows="3" maxlength="150" required placeholder="請填寫原因"></textarea></div></div><div class="modal-actions"><button class="secondary" data-close="refundDialog">取消</button><button id="confirmRefund" class="danger">確認退款</button></div></dialog>
 <!-- 【功能區 JS-00】全域錯誤捕捉：頁面載入與 Promise 例外提示 -->
@@ -444,11 +471,29 @@ let authSessionVersion=0;
 const state={user:null,role:null,name:'',products:[],ingredients:[],rollMaterials:[],promos:[],sales:[],audit:[],damages:[],cashCounts:[],accounts:[],settings:{stallName:'高一丁',sharedCost:0},cart:[],unsubs:[],tab:'checkout',busy:false,pendingOrderId:null,pendingVerification:false,confirmedBaseTotal:0,stockProductId:null,iceProductId:null,customizeTargetKey:null,customizeReturnCart:false,splitReturnToCart:false,editProduct:null,editIngredient:null,editRollMaterial:null,refundId:null,refundUnconfirmedId:null,lastReceipt:null,displayMode:false,sync:{products:false,ingredients:false,rollMaterials:false,promos:false,sales:false,damages:false},errors:[]};
 /* 【功能區 JS-02】訊息提示、結帳成功動畫、使用者二次確認 */
 function toast(msg,error=false){if(error&&state.user&&Date.now()-lastFeedbackError>900){lastFeedbackError=Date.now();cashierSound('error')}const el=$('toast');el.textContent=String(msg);el.classList.toggle('error',error);el.classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.add('hidden'),4200)}
-let gyDoneTimer=null;
-function clearSuccessMark(){if(gyDoneTimer){clearTimeout(gyDoneTimer);gyDoneTimer=null;}const overlay=$('gyDoneOverlay');if(overlay)overlay.classList.add('hidden')}
-function showSuccessMark(){clearSuccessMark();if(document.visibilityState==='hidden')return;$('gyDoneOverlay').classList.remove('hidden');gyDoneTimer=setTimeout(clearSuccessMark,1100)}
+// 僅負責視覺提示：離開頁面、切換 App / 分頁、瀏覽器返回快取時一律復原。
+// 不觸及 Firestore 交易狀態，避免未確認訂單被當成成功或遭到重送。
+let gyDoneTimer=null,gyDoneUntil=0;
+function clearSuccessMark(){
+ if(gyDoneTimer!==null){clearTimeout(gyDoneTimer);gyDoneTimer=null;}
+ gyDoneUntil=0;
+ const overlay=$('gyDoneOverlay');if(overlay)overlay.classList.add('hidden');
+}
+function showSuccessMark(){
+ clearSuccessMark();
+ if(document.visibilityState!=='visible')return;
+ const overlay=$('gyDoneOverlay');if(!overlay)return;
+ // 重置 CSS animation，連續兩筆成功結帳也會從勾選起點重新播放。
+ void overlay.offsetWidth;
+ gyDoneUntil=Date.now()+1100;
+ overlay.classList.remove('hidden');
+ gyDoneTimer=setTimeout(clearSuccessMark,1100);
+}
 window.addEventListener('pagehide',clearSuccessMark);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')clearSuccessMark()});
+window.addEventListener('pageshow',clearSuccessMark);
+document.addEventListener('visibilitychange',clearSuccessMark);
+document.addEventListener('freeze',clearSuccessMark);
+window.addEventListener('focus',()=>{if(gyDoneUntil && Date.now()>=gyDoneUntil)clearSuccessMark()});
 function askSiteConfirm(message,opts={}){
  return new Promise(resolve=>{
   const d=$('gyAskDialog'),yes=$('gyAskYes'),cancel=$('gyAskCancel'),field=$('gyAskPhrase'),box=$('gyAskPhraseBox');
@@ -1623,7 +1668,7 @@ async function checkout(options={}){
    }
    tx.set(counterRef,{date:orderDay,lastNo:orderSequence,lastOrderId:id,lastOrderNo:orderNo,updatedAt:now});
    tx.set(doc(db,'audit',id),{action:'checkout',summary:('結帳 '+orderNo+' · '+money(calc.total)+(manual?'；人工優惠 '+money(manual)+'（'+reason+'）':'')).slice(0,280),subjectId:id,actorUid:checkoutUid,actorName:checkoutActor,seat:checkoutSeat,createdAt:now,hidden:false});
-  });
+  },{maxAttempts:8}); // 同時收銀時共享每日流水號，增加樂觀交易衝突的自動重試次數（預設 5）。
   $('verifyStatus').textContent='已送出，正在向伺服器查核訂單…';
   const verified=await getDocFromServer(ref);
   if(!verified.exists()||verified.metadata.fromCache||verified.metadata.hasPendingWrites||verified.data().actorUid!==checkoutUid||verified.data().fingerprint!==fingerprint||verified.data().status!=='valid'||verified.data().total!==ui.total||verified.data().paid!==paid||verified.data().change!==paid-ui.total)throw Error('伺服器尚未確認這筆訂單');
