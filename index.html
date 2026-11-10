@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- 【QR 結帳規則配對識別】QR-ATOMIC-20261110 -->
 <!-- 【檔案總覽】高一丁 V2 單檔網站。以下標籤僅用於定位程式；部署時不會顯示於畫面。搜尋「功能區」可快速跳轉。 -->
 <html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#153449"><meta name="format-detection" content="telephone=no"><title>高一丁 V2｜校慶結帳</title>
 <!-- 【功能區 HTML-00】網站捷徑圖示／iOS 加入主畫面／PWA Manifest -->
@@ -2119,7 +2120,7 @@ function assertSaleRulesAccessBudget(items,quote,customerOrderId,products=state.
  }
  const ingredientCount=Object.keys(quote.needs||{}).length;
  // 1 account, 1 counter, 1 optional customer order, distinct catalog/roll-addon docs.
- const saleReads=2+Number(!!customerOrderId)+selected.length+rollAddons.size;
+ const saleReads=2+Number(!!customerOrderId)+selected.length+rollAddons.size+(customerOrderId?ingredientCount:0);
  // Overall: account, sale, counter, optional customer, all catalog/ingredient/roll-addon docs.
  const transactionReads=3+Number(!!customerOrderId)+selected.length+ingredientCount+rollAddons.size;
  if(saleReads>10||transactionReads>20){
@@ -2258,7 +2259,7 @@ async function checkout(options={}){
    catch(secondError){
     console.warn('完整 QR 結帳與精簡相容格式均被拒絕',{
      first:firstError?.code||firstError?.message,second:secondError?.code||secondError?.message});
-    const compatibilityFailure=Error('QR 訂單的完整與精簡付款格式都被資料庫拒絕；可能還有帳號、商品價格或庫存規則不相容：'+String(secondError?.message||'未知錯誤'));
+    const compatibilityFailure=Error('QR 付款的兩種格式均遭資料庫拒絕，未完成扣庫存或銷售。請檢查實際發布的 Firestore 規則與商品／原料狀態；目前不能從 permission-denied 判斷是哪一筆文件。'+String(secondError?.message||''));
     compatibilityFailure.code=secondError?.code||'permission-denied';
     throw compatibilityFailure;
    }
