@@ -136,22 +136,33 @@ service cloud.firestore {
         let sale = getAfter(/databases/$(database)/documents/sales/$(data.saleId)).data;
         return sale.status == 'valid' && sale.customerOrderId == id
           && sale.actorUid == request.auth.uid && sale.createdAt == request.time
-          && data.finalTotal is int && data.finalTotal == sale.total
-          && data.editedByCashier is bool
-          && data.finalItems is list && data.finalItems.size() > 0
-          && data.finalItems.size() <= 12 && data.finalItems.size() == sale.lines.size()
-          && paidLineMatch(sale.lines,data.finalItems,0) && paidLineMatch(sale.lines,data.finalItems,1)
-          && paidLineMatch(sale.lines,data.finalItems,2) && paidLineMatch(sale.lines,data.finalItems,3)
-          && paidLineMatch(sale.lines,data.finalItems,4) && paidLineMatch(sale.lines,data.finalItems,5)
-          && paidLineMatch(sale.lines,data.finalItems,6) && paidLineMatch(sale.lines,data.finalItems,7)
-          && paidLineMatch(sale.lines,data.finalItems,8) && paidLineMatch(sale.lines,data.finalItems,9)
-          && paidLineMatch(sale.lines,data.finalItems,10) && paidLineMatch(sale.lines,data.finalItems,11);
+          // New receipt mode verifies final price and edited items.
+          // Legacy mode only changes status, paidAt, paidBy and saleId.
+          && (
+            (!('finalTotal' in data) && !('finalItems' in data) && !('editedByCashier' in data))
+            || (
+              data.finalTotal is int && data.finalTotal == sale.total
+              && data.editedByCashier is bool
+              && data.finalItems is list && data.finalItems.size() > 0
+              && data.finalItems.size() <= 12 && data.finalItems.size() == sale.lines.size()
+              && paidLineMatch(sale.lines,data.finalItems,0) && paidLineMatch(sale.lines,data.finalItems,1)
+              && paidLineMatch(sale.lines,data.finalItems,2) && paidLineMatch(sale.lines,data.finalItems,3)
+              && paidLineMatch(sale.lines,data.finalItems,4) && paidLineMatch(sale.lines,data.finalItems,5)
+              && paidLineMatch(sale.lines,data.finalItems,6) && paidLineMatch(sale.lines,data.finalItems,7)
+              && paidLineMatch(sale.lines,data.finalItems,8) && paidLineMatch(sale.lines,data.finalItems,9)
+              && paidLineMatch(sale.lines,data.finalItems,10) && paidLineMatch(sale.lines,data.finalItems,11)
+            )
+          );
       }
       allow update: if member()
         && resource.data.status == 'pending'
         && request.time < resource.data.createdAt + duration.value(10, 'm')
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','paidAt','paidBy','saleId','finalTotal','finalItems','editedByCashier'])
-        && request.resource.data.diff(resource.data).affectedKeys().hasAll(['status','paidAt','paidBy','saleId','finalTotal','finalItems','editedByCashier'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasAll(['status','paidAt','paidBy','saleId'])
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['finalTotal','finalItems','editedByCashier'])
+          || request.resource.data.diff(resource.data).affectedKeys().hasAll(['finalTotal','finalItems','editedByCashier'])
+        )
         && request.resource.data.status == 'paid'
         && request.resource.data.paidAt == request.time
         && request.resource.data.paidBy == request.auth.uid
@@ -498,6 +509,7 @@ service cloud.firestore {
         return idx >= extras.size() || (
           extras[idx] is map
           && extras[idx].id is string
+          && extras[idx].optionIndex is int && extras[idx].optionIndex >= 0 && extras[idx].optionIndex < 12
           && extras[idx].qty is int && extras[idx].qty >= 1 && extras[idx].qty <= 10000
           && extras[idx].price is int && extras[idx].price >= 0 && extras[idx].price <= 10000000
           && extras[idx].netAmount is int && extras[idx].netAmount >= 0
@@ -575,10 +587,46 @@ service cloud.firestore {
           && recipeNeedMinimum(line,product,10) && recipeNeedMinimum(line,product,11)
         );
       }
+      function catalogAddonAt(extras, idx, product) {
+        return idx >= extras.size() || catalogAddonMatches(extras[idx], product);
+      }
+      function catalogAddonMatches(extra, product) {
+        return product.category in ['飯捲','飯卷','飯糰']
+          ? rollAddonMatches(extra, product)
+          : iceAddonMatches(extra, product);
+      }
+      function iceAddonMatches(extra, product) {
+        let options = product.get('addonOptions', []);
+        return options is list && extra.optionIndex < options.size()
+          && options[extra.optionIndex].id == extra.id
+          && options[extra.optionIndex].price == extra.price
+          // Ice-cream add-on must also appear in the stock-needs map.
+          && extra.id in request.resource.data.needs
+          && request.resource.data.needs[extra.id] >= extra.qty;
+      }
+      function rollAddonMatches(extra, product) {
+        let options = product.get('rollAddonOptions', []);
+        let material = getAfter(/databases/$(database)/documents/rollIngredients/$(extra.id)).data;
+        return material.get('hidden', false) == false
+          && (options.size() > 0
+            ? (extra.optionIndex < options.size()
+               && options[extra.optionIndex].id == extra.id
+               && options[extra.optionIndex].price == extra.price)
+            : material.defaultPrice == extra.price);
+      }
+      function catalogAddonsMatch(extras, product) {
+        return catalogAddonAt(extras,0,product) && catalogAddonAt(extras,1,product)
+          && catalogAddonAt(extras,2,product) && catalogAddonAt(extras,3,product)
+          && catalogAddonAt(extras,4,product) && catalogAddonAt(extras,5,product)
+          && catalogAddonAt(extras,6,product) && catalogAddonAt(extras,7,product)
+          && catalogAddonAt(extras,8,product) && catalogAddonAt(extras,9,product)
+          && catalogAddonAt(extras,10,product) && catalogAddonAt(extras,11,product);
+      }
       function validCatalogPrice(line) {
-        // getAfter ties the catalog price check to a product updated in THIS atomic sale.
+        // Reuse the product document needed for base-price verification.
         let product = getAfter(/databases/$(database)/documents/products/$(line.productId)).data;
-        return catalogRecipeNeedsCovered(line, product)
+        return catalogAddonsMatch(line.extras, product)
+          && catalogRecipeNeedsCovered(line, product)
           && product.lastOrderId == id
           && product.updatedAt == request.time
           && line.productId in request.resource.data.productDeltas
@@ -749,6 +797,8 @@ service cloud.firestore {
         && request.resource.data.needs is map
         && request.resource.data.rollNeeds is map
         && request.resource.data.productDeltas is map
+        // One account + one counter + optional customer + distinct product docs;
+        // roll-addon docs are checked above by catalogAddonsMatch.
         && request.resource.data.manualDiscount is int
         && request.resource.data.baseTotal is int
         && request.resource.data.baseTotal >= 0
