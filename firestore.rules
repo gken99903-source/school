@@ -9,9 +9,13 @@ service cloud.firestore {
       return /databases/$(database)/documents/accounts/$(request.auth.uid);
     }
     function activeAccount() {
-      return loggedIn() && exists(accountPath())
-        && get(accountPath()).data.email == request.auth.token.email
-        && get(accountPath()).data.role in ['student','teacher','admin'];
+      return loggedIn() && activeAccountDataValid();
+    }
+    // 相容舊帳號欄位；缺少資料時拒絕，不額外存取/修改文件。
+    function activeAccountDataValid() {
+      let account = get(accountPath()).data;
+      return account.get('email', '') == request.auth.token.email
+        && account.get('role', '') in ['student','teacher','admin'];
     }
     function member() { return superAdmin() || activeAccount(); }
     function manager() {
@@ -126,13 +130,15 @@ service cloud.firestore {
           ])
           && request.resource.data.updatedAt == request.time
           && request.resource.data.sold is int
-          && request.resource.data.sold > resource.data.sold
+          && resource.data.get('sold', 0) is int
+          && resource.data.get('revenue', 0) is int
+          && request.resource.data.sold > resource.data.get('sold', 0)
           && request.resource.data.revenue is int
-          && request.resource.data.revenue >= resource.data.revenue
+          && request.resource.data.revenue >= resource.data.get('revenue', 0)
           && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
           && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.status == 'valid'
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].sold == request.resource.data.sold - resource.data.sold
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].revenue == request.resource.data.revenue - resource.data.revenue
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].sold == request.resource.data.sold - resource.data.get('sold', 0)
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.productDeltas[id].revenue == request.resource.data.revenue - resource.data.get('revenue', 0)
           && ((resource.data.category in ['飯捲','飯卷','飯糰']
             && request.resource.data.manualStock is int
             && request.resource.data.manualStock >= 0
@@ -146,15 +152,15 @@ service cloud.firestore {
           && request.resource.data.updatedAt == request.time
           && request.resource.data.sold is int
           && request.resource.data.sold >= 0
-          && request.resource.data.sold < resource.data.sold
+          && request.resource.data.sold < resource.data.get('sold', 0)
           && request.resource.data.revenue is int
           && request.resource.data.revenue >= 0
-          && request.resource.data.revenue <= resource.data.revenue
+          && request.resource.data.revenue <= resource.data.get('revenue', 0)
           && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.status == 'voided'
           && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.refundedByUid == request.auth.uid
           && ((('productDeltas' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)
-            && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].sold == resource.data.sold - request.resource.data.sold
-            && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].revenue == resource.data.revenue - request.resource.data.revenue
+            && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].sold == resource.data.get('sold', 0) - request.resource.data.sold
+            && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].revenue == resource.data.get('revenue', 0) - request.resource.data.revenue
             && ((resource.data.category in ['飯捲','飯卷','飯糰']
               && request.resource.data.get('manualStock',0) - resource.data.get('manualStock',0) == getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.productDeltas[id].rollQty)
              || !(resource.data.category in ['飯捲','飯卷','飯糰'])))
@@ -214,7 +220,7 @@ service cloud.firestore {
             'name','unit','totalQty','unitCost','updatedAt'
           ])
           && request.resource.data.totalQty is int
-          && request.resource.data.totalQty >= resource.data.usedQty
+          && request.resource.data.totalQty >= resource.data.get('usedQty', 0)
           && request.resource.data.totalQty <= 10000000)
         || (member()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -222,40 +228,40 @@ service cloud.firestore {
           ])
           && request.resource.data.usedQty is int
           && request.resource.data.damagedQty is int
-          && request.resource.data.usedQty > resource.data.usedQty
+          && request.resource.data.usedQty > resource.data.get('usedQty', 0)
           && request.resource.data.usedQty <= resource.data.totalQty
           && request.resource.data.damagedQty == (('damagedQty' in resource.data) ? resource.data.damagedQty : 0)
-             + request.resource.data.usedQty - resource.data.usedQty
+             + request.resource.data.usedQty - resource.data.get('usedQty', 0)
           && request.resource.data.lastDamageId is string
           && existsAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId))
           && getAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId)).data.ingredientId == id
           && getAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId)).data.actorUid == request.auth.uid
-          && getAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId)).data.qty == request.resource.data.usedQty - resource.data.usedQty
+          && getAfter(/databases/$(database)/documents/damage/$(request.resource.data.lastDamageId)).data.qty == request.resource.data.usedQty - resource.data.get('usedQty', 0)
         )
         || (member()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'usedQty','lastOrderId','updatedAt'
           ])
           && request.resource.data.usedQty is int
-          && request.resource.data.usedQty > resource.data.usedQty
+          && request.resource.data.usedQty > resource.data.get('usedQty', 0)
           && request.resource.data.usedQty <= resource.data.totalQty
           && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId))
           && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
-          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.needs[id] == request.resource.data.usedQty - resource.data.usedQty)
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.needs[id] == request.resource.data.usedQty - resource.data.get('usedQty', 0))
         || (member()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'usedQty','lastRefundId','updatedAt'
           ])
           && request.resource.data.usedQty is int
           && request.resource.data.usedQty >= 0
-          && request.resource.data.usedQty < resource.data.usedQty
+          && request.resource.data.usedQty < resource.data.get('usedQty', 0)
           && existsAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId))
           && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.refundedByUid == request.auth.uid
           && (
             (('needs' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)
-              && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.needs[id] == resource.data.usedQty - request.resource.data.usedQty)
+              && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.needs[id] == resource.data.get('usedQty', 0) - request.resource.data.usedQty)
             || (('usedIngredients' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)
-              && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.usedIngredients[id] == resource.data.usedQty - request.resource.data.usedQty)
+              && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.usedIngredients[id] == resource.data.get('usedQty', 0) - request.resource.data.usedQty)
           ));
       allow delete: if false;
     }
@@ -299,10 +305,13 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.actorUid == request.auth.uid
         && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastOrderId)).data.orderNo == request.resource.data.lastOrderNo;
       allow update: if member()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastNo','lastOrderId','lastOrderNo','updatedAt'])
+        // 歷史流水號可能缺少新欄位；只允許寫入標準五欄位，編號仍必須遞增。
+        && request.resource.data.keys().hasOnly(['date','lastNo','lastOrderId','lastOrderNo','updatedAt'])
+        && request.resource.data.keys().hasAll(['date','lastNo','lastOrderId','lastOrderNo','updatedAt'])
+        && resource.data.get('lastNo', 0) is int
         && request.resource.data.date == day
         && request.resource.data.lastNo is int
-        && request.resource.data.lastNo == resource.data.lastNo + 1
+        && request.resource.data.lastNo == resource.data.get('lastNo', 0) + 1
         && request.resource.data.lastNo <= 999999
         && request.resource.data.lastOrderId is string
         && request.resource.data.lastOrderNo is string
@@ -510,6 +519,12 @@ service cloud.firestore {
         )
         && data.discount is int && data.discount == data.promoDiscount + data.manualDiscount;
       }
+      function matchingCounter(data, id) {
+        let counter = getAfter(/databases/$(database)/documents/orderCounters/$(data.orderDay)).data;
+        return counter.lastOrderId == id
+          && counter.lastNo == data.orderSequence
+          && counter.lastOrderNo == data.orderNo;
+      }
       allow read: if member();
       allow create: if member()
         && request.resource.data.actorUid == request.auth.uid
@@ -547,9 +562,7 @@ service cloud.firestore {
              && request.resource.data.orderDay is string
              && request.resource.data.orderSequence is int
              && request.resource.data.orderSequence >= 1
-             && getAfter(/databases/$(database)/documents/orderCounters/$(request.resource.data.orderDay)).data.lastOrderId == id
-             && getAfter(/databases/$(database)/documents/orderCounters/$(request.resource.data.orderDay)).data.lastNo == request.resource.data.orderSequence
-             && getAfter(/databases/$(database)/documents/orderCounters/$(request.resource.data.orderDay)).data.lastOrderNo == request.resource.data.orderNo
+             && matchingCounter(request.resource.data, id)
            ));
       allow update: if (superAdmin()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
