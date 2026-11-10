@@ -1440,8 +1440,8 @@ function renderPendingOrders(){
  if(!p){el.innerHTML='<p class="muted">此裝置目前沒有未回傳訂單。</p>';return}
  const date=new Date(p.createdAt||Date.now()).toLocaleString('zh-TW');
  const lines=(p.items||[]).map(x=>esc(x.otherName||state.products.find(y=>y.id===x.productId)?.name||x.productId)+' × '+(x.qty||1)).join('、');
- el.innerHTML='<div class="pending-item"><b>待核對：'+money(p.total)+'</b><div class="muted">建立時間：'+esc(date)+'</div><div class="muted">訂單：'+esc(p.id)+'</div><div>'+lines+'</div><div class="hint">先核對伺服器是否已有同一訂單；若已收款，請勿再次收款。</div><div class="pending-actions"><button type="button" class="secondary" id="pendingVerify">① 向伺服器核對</button><button type="button" class="primary" id="pendingRetry" '+(pendingServerMissingId===p.id?'':'disabled title="請先核對伺服器查無此單"')+'>② 使用原編號重試</button><button type="button" class="secondary" id="pendingCopy">複製錯誤資訊</button></div></div>';
- $('pendingVerify').onclick=checkStoredReceipt;$('pendingRetry').onclick=retryPendingOrder;$('pendingCopy').onclick=copyPendingError;
+ el.innerHTML='<div class="pending-item"><b>待核對：'+money(p.total)+'</b><div class="muted">建立時間：'+esc(date)+'</div><div class="muted">訂單：'+esc(p.id)+'</div><div>'+lines+'</div><div class="hint">先核對伺服器是否已有同一訂單；若已收款，請勿再次收款。「刪除本機歷史暫存」只解鎖本機，不刪雲端交易、不會退款。</div><div class="pending-actions"><button type="button" class="secondary" id="pendingVerify">① 向伺服器核對</button><button type="button" class="primary" id="pendingRetry" '+(pendingServerMissingId===p.id?'':'disabled title="請先核對伺服器查無此單"')+'>② 使用原編號重試</button><button type="button" class="secondary" id="pendingCopy">複製錯誤資訊</button><button type="button" class="danger" id="pendingDiscard">刪除本機歷史暫存</button></div></div>';
+ $('pendingVerify').onclick=checkStoredReceipt;$('pendingRetry').onclick=retryPendingOrder;$('pendingCopy').onclick=copyPendingError;$('pendingDiscard').onclick=discardHistoricalPending;
 }
 async function copyPendingError(){
  const p=readPendingReceipt();if(!p)return;
@@ -1449,6 +1449,34 @@ async function copyPendingError(){
  try{await navigator.clipboard.writeText(value);toast('已複製錯誤資訊，不含付款密碼');}
  catch(err){toast('瀏覽器未授權複製，請使用畫面截圖回報：'+err.message,true);}
 }
+// 僅清除本機歷史未回傳暫存；不寫入 Firestore、不退款、不建立新訂單。
+// 由使用者手動輸入確認文字，可在資料庫權限失效時解除本機 UI 卡死。
+async function discardHistoricalPending(){
+ if(state.busy||state.pendingLookupBusy||state.retryPendingBusy||state.checkoutAsking){toast('目前有交易或核對正在進行，無法清除本機暫存',true);return;}
+ const p=readPendingReceipt();if(!p){toast('沒有需要清除的本機暫存');renderPendingOrders();return;}
+ const message='確定要永久刪除此裝置的歷史未回傳訂單？\n訂單 '+p.id+'／金額 '+money(p.total)+'。\n此操作只清除本機記錄與卡住狀態，不會取消伺服器訂單、還款或恢復庫存。若之前已收款，必須先人工對帳，絕對不要再收一次。';
+ if(!await askSiteConfirm(message,{title:'刪除本機未回傳訂單',phrase:'刪除本機暫存'}))return;
+ // 防止使用者確認期間發生其他結帳，或暫存已被其他操作取代。
+ if(state.busy||state.pendingLookupBusy||state.retryPendingBusy||state.checkoutAsking||readPendingReceipt()?.id!==p.id){toast('暫存或交易狀態已變更，請重新核對',true);return;}
+ try{
+  localStorage.removeItem(pendingKey());
+  sessionStorage.removeItem(pendingLegacyKey());
+ }catch(e){toast('無法清除本機暫存：'+e.message,true);return;}
+ if(readPendingReceipt()){toast('本機暫存仍存在，清除未成功',true);return;}
+ pendingServerMissingId=null;
+ state.pendingVerification=false;
+ state.pendingOrderId=null;
+ state.confirmedBaseTotal=0;
+ state.cart=[];
+ $('pendingCheck').classList.add('hidden');
+ $('verifyAgainBtn').classList.add('hidden');
+ $('backCart').disabled=false;
+ $('verifyStatus').textContent='';
+ if($('confirmDialog').open)$('confirmDialog').close();
+ render();tab('checkout');
+ toast('已刪除本機歷史暫存，收銀畫面已解除鎖定；伺服器資料未變動');
+}
+
 async function checkStoredReceipt(){
  if(state.busy||state.pendingLookupBusy){toast('訂單仍在送出或核對中，請勿重複操作',true);return null;}
  state.pendingLookupBusy=true;
