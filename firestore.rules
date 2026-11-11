@@ -312,10 +312,72 @@ service cloud.firestore {
         && request.resource.data.updatedAt == request.time;
       allow delete: if false;
     }
+    match /cashDrawerDays/{day} {
+      // 只驗證本筆資料和帳號，不做昂貴的 sales/庫存跨文件 getAfter 核對。
+      // 每天只有一個文件，交易依同文件序號更新，避免三台同時重複開店或閉店。
+      allow read: if member();
+      allow create: if member()
+        && day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.keys().hasOnly([
+          'date','status','openingCash','openedAt','openedByUid','openedByName',
+          'updatedAt','lastCountAt','lastCountId','countNo'
+        ])
+        && request.resource.data.date == day
+        && request.resource.data.status == 'open'
+        && request.resource.data.openingCash is int
+        && request.resource.data.openingCash >= 0 && request.resource.data.openingCash <= 10000000
+        && request.resource.data.openedByUid == request.auth.uid
+        && request.resource.data.openedByName is string
+        && request.resource.data.openedByName.size() > 0 && request.resource.data.openedByName.size() <= 80
+        && request.resource.data.openedAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.lastCountAt == request.time
+        && request.resource.data.lastCountId is string
+        && request.resource.data.countNo == 1;
+      allow update: if member()
+        && resource.data.status == 'open'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status','updatedAt','lastCountAt','lastCountId','countNo',
+          'closedAt','closedByUid','closedByName','closingCash'
+        ])
+        && request.resource.data.date == day
+        && request.resource.data.status in ['open','closed']
+        && request.resource.data.countNo is int
+        && request.resource.data.countNo == resource.data.countNo + 1
+        && request.resource.data.countNo <= 10000
+        && request.resource.data.lastCountId is string
+        && request.resource.data.lastCountId != resource.data.lastCountId
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.lastCountAt == request.time
+        && (
+          (request.resource.data.status == 'open' && !('closedAt' in request.resource.data))
+          ||
+          (request.resource.data.status == 'closed'
+           && request.resource.data.closedAt == request.time
+           && request.resource.data.closedByUid == request.auth.uid
+           && request.resource.data.closedByName is string
+           && request.resource.data.closedByName.size() > 0
+           && request.resource.data.closedByName.size() <= 80
+           && request.resource.data.closingCash is int
+           && request.resource.data.closingCash >= 0
+           && request.resource.data.closingCash <= 10000000)
+        );
+      allow delete: if false;
+    }
     match /cashCounts/{id} {
       allow read: if member();
       allow create: if member()
-        && request.resource.data.keys().hasOnly(['date','openingCash','denominations','countedCash','grossSales','refundAmount','expectedCash','variance','actorUid','actorName','createdAt'])
+        && request.resource.data.keys().hasOnly(['date','openingCash','denominations','countedCash','grossSales','refundAmount','expectedCash','variance','actorUid','actorName','createdAt','phase','countNo','note','snapshotAt'])
+        // 保留舊版 cashCounts 文件寫入相容性；新增欄位僅對錢櫃管理進行基本格式驗證。
+        && (!('phase' in request.resource.data) || (
+             request.resource.data.phase in ['opening','periodic','closing']
+             && request.resource.data.countNo is int
+             && request.resource.data.countNo >= 1
+             && request.resource.data.countNo <= 10000
+             && request.resource.data.note is string
+             && request.resource.data.note.size() <= 160
+             && request.resource.data.snapshotAt is timestamp
+           ))
         && request.resource.data.actorUid == request.auth.uid
         && request.resource.data.createdAt == request.time
         && request.resource.data.actorName is string
