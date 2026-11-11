@@ -66,6 +66,21 @@ service cloud.firestore {
         && request.resource.data.price <= 10000000;
       allow update, delete: if false;
     }
+    // 只為待結帳名單提供最小權限：登入成員可讀，每人只能寫自己的在線狀態。
+    // 不參與 sales、products、ingredients 或 orderCounters 的交易授權。
+    match /checkoutPresence/{uid} {
+      allow read: if member();
+      allow create, update: if member() && uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid','seat','name','active','updatedAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.seat is int
+        && request.resource.data.seat >= 0 && request.resource.data.seat <= 99
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 30
+        && request.resource.data.active is bool
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if loggedIn() && uid == request.auth.uid;
+    }
     match /products/{id} {
       allow read: if member();
       allow create: if manager()
@@ -74,6 +89,8 @@ service cloud.firestore {
         && request.resource.data.price is int
         && request.resource.data.price >= 1
         && request.resource.data.price <= 10000000
+        && request.resource.data.get('imageUrl', '') is string
+        && request.resource.data.get('imageUrl', '').size() <= 1000
         && request.resource.data.manualStock == 0
         && request.resource.data.unitCost is int
         && request.resource.data.unitCost >= 0
@@ -115,8 +132,10 @@ service cloud.firestore {
           && request.resource.data.lastResetAt == request.time)
         || (manager()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-             'name','category','unit','price','unitCost','recipe','addonOptions','rollAddonOptions','hidden','updatedAt'
+             'name','category','unit','price','unitCost','recipe','addonOptions','rollAddonOptions','imageUrl','hidden','updatedAt'
           ])
+          && request.resource.data.get('imageUrl', '') is string
+          && request.resource.data.get('imageUrl', '').size() <= 1000
           && request.resource.data.price is int
           && request.resource.data.price > 0
           && request.resource.data.category in ['飯捲','冰淇淋','冰品']
