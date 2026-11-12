@@ -406,7 +406,7 @@ body.big-cashier .modal-actions button,body.big-cashier .cartbar button{min-heig
 body.compact-cashier .product{min-height:145px;padding:12px;gap:5px}
 body.compact-cashier .product .name{font-size:17px}
 body.compact-cashier .products{gap:7px}
-@media(max-width:600px){.sales-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.split-preview strong{font-size:17px}.split-row{flex-wrap:wrap}body.big-cashier .products{grid-template-columns:repeat(2,minmax(0,1fr))}body.big-cashier .product{padding:10px}.cart-actions{justify-content:flex-start}}
+@media(max-width:600px){.sales-filters{grid-template-columns:minmax(0,1fr)}.sales-filters .field{min-width:0}.sales-filters input,.sales-filters select{display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%}.split-preview strong{font-size:17px}.split-row{flex-wrap:wrap}body.big-cashier .products{grid-template-columns:repeat(2,minmax(0,1fr))}body.big-cashier .product{padding:10px}.cart-actions{justify-content:flex-start}}
 @media(max-width:370px){.sales-filters{grid-template-columns:1fr}.sales-filters .full{grid-column:auto}.split-preview{grid-template-columns:1fr}}
 /* 【本次修正】待核對訂單操作按鈕：先核對，才可使用原編號重試。 */
 #pendingOrdersTab .pending-actions button{min-height:44px;touch-action:manipulation}
