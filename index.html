@@ -408,6 +408,16 @@ body.compact-cashier .product .name{font-size:17px}
 body.compact-cashier .products{gap:7px}
 @media(max-width:600px){.sales-filters{grid-template-columns:minmax(0,1fr)}.sales-filters .field{min-width:0}.sales-filters input,.sales-filters select{display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%}.split-preview strong{font-size:17px}.split-row{flex-wrap:wrap}body.big-cashier .products{grid-template-columns:repeat(2,minmax(0,1fr))}body.big-cashier .product{padding:10px}.cart-actions{justify-content:flex-start}}
 @media(max-width:370px){.sales-filters{grid-template-columns:1fr}.sales-filters .full{grid-column:auto}.split-preview{grid-template-columns:1fr}}
+/* 【本次修正】iPhone Safari：未選日期時顯示提示，不變更篩選數值。 */
+.sales-date-hint{display:none}
+@media(max-width:680px){
+ .sales-filters .sales-date-field{position:relative}
+ .sales-filters .sales-date-field input[type="date"]{font-size:16px;color:var(--ink);color-scheme:dark}
+ body:not(.dark) .sales-filters .sales-date-field input[type="date"]{color-scheme:light}
+ .sales-filters .sales-date-field .sales-date-hint{position:absolute;left:14px;bottom:11px;display:none;font-size:15px;line-height:21px;color:var(--sub);pointer-events:none;z-index:1}
+ .sales-filters .sales-date-field.is-empty:not(:focus-within) .sales-date-hint{display:block}
+ .sales-filters .sales-date-field.is-empty:not(:focus-within) input[type="date"]::-webkit-datetime-edit{color:transparent}
+}
 /* 【本次修正】待核對訂單操作按鈕：先核對，才可使用原編號重試。 */
 #pendingOrdersTab .pending-actions button{min-height:44px;touch-action:manipulation}
 #pendingOrdersTab .pending-actions button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
@@ -599,7 +609,7 @@ body:not(.dark) .fest-presence-chip .fest-online-dot{border-color:#f5efff}
 <!-- 【功能區 HTML-09】異常交易提醒（限管理權限） -->
 <div id="alertsTab" class="hidden"><div class="section-head"><div><h3>異常交易提醒</h3><p class="muted">僅供管理人員核對，不會自動變更訂單</p></div></div><div id="alertList"></div></div>
 <!-- 【功能區 HTML-10】銷售紀錄、進階搜尋、退款、收據與報表 -->
-<div id="salesTab" class="hidden"><div class="section-head"><h3>銷售紀錄</h3><div class="buttons"><label for="reportDate" class="report-date-label">報表日期 <input id="reportDate" type="date" aria-label="選擇記帳報表日期"></label><button id="exportSales" class="secondary hidden">下載整日記帳 PDF</button><button class="danger hidden" id="clearSales" type="button">清空測試銷售與還原庫存</button></div></div><div class="sales-filters" id="salesFilters"><div class="field full"><label for="salesSearch">搜尋訂單／商品／收銀員</label><input id="salesSearch" placeholder="訂單編號、商品、收銀員、金額…" autocomplete="off"></div><div class="field"><label for="salesStatusFilter">交易狀態</label><select id="salesStatusFilter"><option value="all">全部狀態</option><option value="valid">已完成</option><option value="voided">已退款</option></select></div><div class="field"><label for="salesDateFrom">開始日期</label><input id="salesDateFrom" type="date"></div><div class="field"><label for="salesDateTo">結束日期</label><input id="salesDateTo" type="date"></div><div class="field"><label for="salesMinAmount">最低金額</label><input id="salesMinAmount" type="number" min="0" step="1" placeholder="不限"></div><div class="field"><label for="salesMaxAmount">最高金額</label><input id="salesMaxAmount" type="number" min="0" step="1" placeholder="不限"></div></div><div class="sales-filter-foot"><span id="salesResultCount" class="muted"></span><button type="button" id="clearSalesFilters" class="secondary">清除篩選</button></div><div id="salesList"></div></div>
+<div id="salesTab" class="hidden"><div class="section-head"><h3>銷售紀錄</h3><div class="buttons"><label for="reportDate" class="report-date-label">報表日期 <input id="reportDate" type="date" aria-label="選擇記帳報表日期"></label><button id="exportSales" class="secondary hidden">下載整日記帳 PDF</button><button class="danger hidden" id="clearSales" type="button">清空測試銷售與還原庫存</button></div></div><div class="sales-filters" id="salesFilters"><div class="field full"><label for="salesSearch">搜尋訂單／商品／收銀員</label><input id="salesSearch" placeholder="訂單編號、商品、收銀員、金額…" autocomplete="off"></div><div class="field"><label for="salesStatusFilter">交易狀態</label><select id="salesStatusFilter"><option value="all">全部狀態</option><option value="valid">已完成</option><option value="voided">已退款</option></select></div><div class="field sales-date-field"><label for="salesDateFrom">開始日期</label><input id="salesDateFrom" type="date"><span class="sales-date-hint" aria-hidden="true">不限日期 · 點擊選擇</span></div><div class="field sales-date-field"><label for="salesDateTo">結束日期</label><input id="salesDateTo" type="date"><span class="sales-date-hint" aria-hidden="true">不限日期 · 點擊選擇</span></div><div class="field"><label for="salesMinAmount">最低金額</label><input id="salesMinAmount" type="number" min="0" step="1" placeholder="不限"></div><div class="field"><label for="salesMaxAmount">最高金額</label><input id="salesMaxAmount" type="number" min="0" step="1" placeholder="不限"></div></div><div class="sales-filter-foot"><span id="salesResultCount" class="muted"></span><button type="button" id="clearSalesFilters" class="secondary">清除篩選</button></div><div id="salesList"></div></div>
 <!-- 【功能區 HTML-11】補貨與庫存異動日誌 -->
 <div id="movementsTab" class="hidden"><div class="section-head"><div><h3>補貨與庫存異動紀錄</h3><p class="muted">最近 200 筆操作日誌中的庫存相關記錄；此處不會修改庫存</p></div><select id="movementFilter" aria-label="庫存紀錄篩選"><option value="all">全部異動</option><option value="restock">補貨</option><option value="adjust">調整</option><option value="damage">毀損</option><option value="transaction">結帳與退款</option></select></div><div id="movementList"></div></div><div id="auditTab" class="hidden"><div class="section-head"><h3>操作紀錄</h3><div class="buttons"><button id="exportAudit" class="secondary hidden">下載 PDF</button><button class="danger hidden" id="clearAudit" type="button">清空操作紀錄</button></div></div><div id="auditList"></div></div>
 <!-- 【功能區 HTML-12】管理設定：商品、原料、優惠、帳號、攤位資料 -->
@@ -2429,6 +2439,11 @@ $('iceDialog').addEventListener('close',()=>{if(state.customizeReturnCart){state
 $('openSplitCart').onclick=openSplitCartDialog;$('splitLines').oninput=updateSplitPreview;$('confirmSplit').onclick=confirmSplitCart;
 for(const id of ['salesSearch','salesStatusFilter','salesDateFrom','salesDateTo','salesMinAmount','salesMaxAmount'])$(id).addEventListener('input',renderSales);
 $('clearSalesFilters').onclick=()=>{for(const id of ['salesSearch','salesDateFrom','salesDateTo','salesMinAmount','salesMaxAmount'])$(id).value='';$('salesStatusFilter').value='all';renderSales()};
+/* 日期欄位的純顯示提示：原有篩選與清除邏輯保持不變。 */
+function syncSalesDateHints(){for(const id of ['salesDateFrom','salesDateTo']){const el=$(id);el.closest('.sales-date-field')?.classList.toggle('is-empty',!el.value)}}
+for(const id of ['salesDateFrom','salesDateTo']){$(id).addEventListener('input',syncSalesDateHints);$(id).addEventListener('change',syncSalesDateHints)}
+$('clearSalesFilters').addEventListener('click',syncSalesDateHints);
+syncSalesDateHints();
 $('holdCurrent').onclick=holdCurrentOrder;
 $('heldOrdersList').onclick=e=>{const a=e.target.closest('[data-hold-load]'),b=e.target.closest('[data-hold-delete]');if(a)restoreHeldOrder(a.dataset.holdLoad);else if(b)deleteHeldOrder(b.dataset.holdDelete)};
 $('confirmDialog').addEventListener('click',e=>{const b=e.target.closest('[data-fast-pay]');if(!b)return;$('paid').value=b.dataset.fastPay;updateChange()});
