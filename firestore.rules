@@ -209,7 +209,8 @@ service cloud.firestore {
         && request.resource.data.unitCost >= 0 && request.resource.data.unitCost <= 10000000
         && request.resource.data.hidden is bool
         && request.resource.data.updatedAt == request.time;
-      allow delete: if false;
+      // 僅 26 號可刪除誤建的飯捲加購原料；前端檢查配方及交易引用。
+      allow delete: if superAdmin();
     }
     match /ingredients/{id} {
       allow read: if member();
@@ -277,7 +278,10 @@ service cloud.firestore {
             || (('usedIngredients' in getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data)
               && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.lastRefundId)).data.usedIngredients[id] == resource.data.get('usedQty', 0) - request.resource.data.usedQty)
           ));
-      allow delete: if false;
+      // 只有未使用且無毀損紀錄的原料可由最高管理員刪除。
+      allow delete: if superAdmin()
+        && resource.data.get('usedQty', 0) == 0
+        && resource.data.get('damagedQty', 0) == 0;
     }
     match /damage/{id} {
       allow read: if member();
