@@ -57,14 +57,31 @@ service cloud.firestore {
     }
     match /promotions/{id} {
       allow read: if member();
-      allow create: if manager()
-        && request.resource.data.productA is string
-        && request.resource.data.productB is string
-        && request.resource.data.productA != request.resource.data.productB
+      // 原有 A+B 優惠條件保留；僅額外開放一份固定的飯捲任選兩份優惠設定。
+      allow create: if manager() && (
+        (id != 'roll_pair' && request.resource.data.productA is string
+          && request.resource.data.productB is string
+          && request.resource.data.productA != request.resource.data.productB
+          && request.resource.data.price is int
+          && request.resource.data.price >= 0
+          && request.resource.data.price <= 10000000)
+        || (id == 'roll_pair' && request.resource.data.keys().hasOnly(['type','name','price','enabled','updatedAt'])
+          && request.resource.data.type == 'rollPair'
+          && request.resource.data.name == '飯捲任選兩份'
+          && request.resource.data.price is int
+          && request.resource.data.price >= 1 && request.resource.data.price <= 10000000
+          && request.resource.data.enabled is bool
+          && request.resource.data.updatedAt == request.time)
+      );
+      allow update: if manager() && id == 'roll_pair' && resource.data.type == 'rollPair'
+        && request.resource.data.keys().hasOnly(['type','name','price','enabled','updatedAt'])
+        && request.resource.data.type == 'rollPair'
+        && request.resource.data.name == '飯捲任選兩份'
         && request.resource.data.price is int
-        && request.resource.data.price >= 0
-        && request.resource.data.price <= 10000000;
-      allow update, delete: if false;
+        && request.resource.data.price >= 1 && request.resource.data.price <= 10000000
+        && request.resource.data.enabled is bool
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
     }
     // 只為待結帳名單提供最小權限：登入成員可讀，每人只能寫自己的在線狀態。
     // 不參與 sales、products、ingredients 或 orderCounters 的交易授權。
