@@ -55,29 +55,28 @@ service cloud.firestore {
         && request.resource.data.stallName.size() <= 45;
       allow delete: if false;
     }
-    function validRollGroups() {
+    function validRollBaseAddons() {
       let d = request.resource.data;
       return d.keys().hasOnly([
-        'type','name','originalProductId','originalPrice','originalEnabled',
-        'flavoredProductIds','flavoredPrice','flavoredEnabled','updatedAt'
+        'type','name','baseProductId','plainPrice','plainEnabled',
+        'toppedPrice','toppedEnabled','addonIds','updatedAt'
       ])
-      && d.type == 'rollPairGroups'
-      && d.name == '飯捲分組兩份優惠'
-      && d.originalProductId is string
-      && d.originalProductId.size() <= 128
-      && d.originalPrice is int && d.originalPrice >= 1 && d.originalPrice <= 10000000
-      && d.originalEnabled is bool
-      && (!d.originalEnabled || d.originalProductId.size() > 0)
-      && d.flavoredProductIds is list && d.flavoredProductIds.size() <= 24
-      && d.flavoredPrice is int && d.flavoredPrice >= 1 && d.flavoredPrice <= 10000000
-      && d.flavoredEnabled is bool
-      && (!d.flavoredEnabled || d.flavoredProductIds.size() > 0)
-      && !d.flavoredProductIds.hasAny([d.originalProductId])
+      && d.type == 'rollPairBaseAddons'
+      && d.name == '基本款飯捲與單料雙份優惠'
+      && d.baseProductId is string
+      && d.baseProductId.size() > 0 && d.baseProductId.size() <= 128
+      && d.plainPrice is int && d.plainPrice >= 1 && d.plainPrice <= 10000000
+      && d.plainEnabled is bool
+      && d.toppedPrice is int && d.toppedPrice >= 1 && d.toppedPrice <= 10000000
+      && d.toppedEnabled is bool
+      && (!d.toppedEnabled || d.toppedPrice >= 40)
+      && d.addonIds is list && d.addonIds.size() <= 12
+      && (!d.toppedEnabled || d.addonIds.size() > 0)
       && d.updatedAt == request.time;
     }
     match /promotions/{id} {
       allow read: if member();
-      // 原本 A+B 優惠不變；新增/更新指定優惠設定時僅允許固定文件 roll_pair。
+      // 原本 A+B 優惠不變；基本飯捲的配料優惠設定僅允許固定文件 roll_pair。
       allow create: if manager() && (
         (id != 'roll_pair' && request.resource.data.productA is string
           && request.resource.data.productB is string
@@ -85,12 +84,12 @@ service cloud.firestore {
           && request.resource.data.price is int
           && request.resource.data.price >= 0
           && request.resource.data.price <= 10000000)
-        || (id == 'roll_pair' && validRollGroups())
+        || (id == 'roll_pair' && validRollBaseAddons())
       );
-      // 舊版 rollPair 可被升級成分組設定；不得從新分組回寫舊版任選設定。
+      // 舊版 rollPair 與依商品口味的設定可升級成基本款加料設定。
       allow update: if manager() && id == 'roll_pair'
-        && resource.data.type in ['rollPair','rollPairGroups']
-        && validRollGroups();
+        && resource.data.type in ['rollPair','rollPairGroups','rollPairBaseAddons']
+        && validRollBaseAddons();
       allow delete: if false;
     }
     // 只為待結帳名單提供最小權限：登入成員可讀，每人只能寫自己的在線狀態。
