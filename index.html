@@ -315,10 +315,16 @@ body.dark .cash-drawer-state[data-anomaly="true"]{background:#4b292c;color:#ffd2
 .cash-drawer-row .hint{margin-top:4px}
 @media(max-width:560px){.cash-drawer-buttons{flex-direction:column}.cash-drawer-buttons button{width:100%}}
 /* 【飯捲任選兩份優惠】獨立後台設定，不影響既有 A+B 優惠 */
-.roll-pair-promo-box{margin-top:17px;padding:16px;border:1px solid var(--border);border-radius:18px;background:var(--surface)}
+.roll-pair-promo-box{margin-top:17px;padding:16px;border:1px solid var(--border);border-radius:22px;background:var(--surface)}
 .roll-pair-promo-box h4{margin:0 0 8px;font-size:17px}.roll-pair-promo-box .muted{line-height:1.6}
-.roll-pair-enable{display:flex;align-items:center;gap:10px;margin:10px 0 14px}.roll-pair-enable input{width:20px;min-height:20px;flex:none;margin:0}
+.roll-pair-group{border:1px solid var(--border);border-radius:18px;padding:14px;margin:13px 0;background:var(--panel)}
+.roll-pair-group h5{margin:0 0 10px;font-size:16px}.roll-pair-group .field{margin-bottom:10px}
+.roll-pair-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:7px 0}
+.roll-pair-choice{display:flex;align-items:center;gap:9px;padding:11px 10px;border:1px solid var(--border);border-radius:12px;background:var(--surface);margin:0;font-weight:600;min-width:0;overflow-wrap:anywhere}
+.roll-pair-choice input,.roll-pair-enable input{width:19px;height:19px;min-height:19px;flex:none;margin:0;accent-color:#8752d6}
+.roll-pair-enable{display:flex;align-items:center;gap:10px;margin:10px 0 5px}
 .roll-pair-promo-box button{max-width:100%}#rollPairPromoStatus{margin:10px 0 0}
+@media(max-width:540px){.roll-pair-choices{grid-template-columns:1fr}.roll-pair-group{padding:12px}}
 /* 【功能區 CSS-06】暫存訂單、電子收據、唯讀展示畫面樣式 */
 
 .checkout-utilities{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:8px 0 4px}
@@ -618,7 +624,10 @@ body:not(.dark) .fest-presence-chip .fest-online-dot{border-color:#f5efff}
 <!-- 【功能區 HTML-11】補貨與庫存異動日誌 -->
 <div id="movementsTab" class="hidden"><div class="section-head"><div><h3>補貨與庫存異動紀錄</h3><p class="muted">最近 200 筆操作日誌中的庫存相關記錄；此處不會修改庫存</p></div><select id="movementFilter" aria-label="庫存紀錄篩選"><option value="all">全部異動</option><option value="restock">補貨</option><option value="adjust">調整</option><option value="damage">毀損</option><option value="transaction">結帳與退款</option></select></div><div id="movementList"></div></div><div id="auditTab" class="hidden"><div class="section-head"><h3>操作紀錄</h3><div class="buttons"><button id="exportAudit" class="secondary hidden">下載 PDF</button><button class="danger hidden" id="clearAudit" type="button">清空操作紀錄</button></div></div><div id="auditList"></div></div>
 <!-- 【功能區 HTML-12】管理設定：商品、原料、優惠、帳號、攤位資料 -->
-<div id="adminTab" class="hidden"><section class="panel"><div class="section-head"><h3>① 原料庫存</h3><button id="addIngredient" class="primary">＋ 新增庫存</button></div><div id="ingredientList"></div></section><section class="panel"><div class="section-head"><h3>② 飯捲加購原料</h3><button id="addRollMaterial" type="button" class="primary">＋ 新增飯捲原料</button></div><div id="rollMaterialList"></div></section><section class="panel"><div class="section-head"><h3>③ 販售商品</h3><div class="buttons"><button id="addRollProduct" type="button" class="secondary">＋ 新增飯卷口味</button><button id="addProduct" class="primary">＋ 新增商品</button></div></div><div id="productAdminList"></div></section><section class="panel"><div class="section-head"><h3>④ 第二樣商品優惠</h3></div><form id="promoForm"><div class="grid"><div class="field"><label>第一樣商品 A</label><select id="promoA" required></select></div><div class="field"><label>第二樣商品 B</label><select id="promoB" required></select></div><div class="field"><label>B 的加購價（元）</label><input id="promoPrice" type="number" min="0" step="1" required></div><div class="field"><label>優惠名稱</label><input id="promoName" maxlength="50" required></div></div><button class="primary">儲存優惠</button></form><div id="promoList"></div><div class="roll-pair-promo-box"><h4>飯捲任選兩份｜合計優惠價</h4><p class="muted">同口味兩份或不同口味各一份都適用；每滿兩份折一次。只折飯捲本身，加購配料另計。若兩份原價未達優惠價，則維持原價。</p><form id="rollPairPromoForm"><div class="field"><label for="rollPairPrice">兩份飯捲合計收費（NT$）</label><input id="rollPairPrice" type="number" min="1" max="10000000" step="1" inputmode="numeric" required placeholder="例如：兩份 NT$100"></div><label class="roll-pair-enable" for="rollPairEnabled"><input id="rollPairEnabled" type="checkbox" checked> 啟用兩份優惠</label><button class="primary" type="submit">儲存飯捲兩份優惠</button></form><p class="muted" id="rollPairPromoStatus" role="status">尚未設定兩份優惠</p></div></section><section class="panel"><h3>攤位設定</h3><div class="grid"><div class="field"><label>攤位名稱</label><input id="stallName" maxlength="45"></div><div class="field"><label>其他支出（元）</label><input id="sharedCost" type="number" min="0" step="1"></div></div><button id="saveSettings" class="primary">儲存</button></section><section id="accountsPanel" class="panel hidden"><h3>帳號管理</h3><form id="createAccountForm"><div class="grid"><div class="field"><label>座號</label><input id="newSeat" inputmode="numeric" maxlength="2" required></div><div class="field"><label>密碼（至少 6 碼）</label><input id="newPassword" type="password" minlength="6" required></div><div class="field"><label>權限</label><select id="newRole"><option value="student">學生</option><option value="teacher">老師</option><option value="admin">管理員</option></select></div><div class="field"><label>姓名（選填）</label><input id="newName" maxlength="30"></div></div><button class="primary">新增帳號</button></form><div id="accountsList"></div></section></div>
+<div id="adminTab" class="hidden"><section class="panel"><div class="section-head"><h3>① 原料庫存</h3><button id="addIngredient" class="primary">＋ 新增庫存</button></div><div id="ingredientList"></div></section><section class="panel"><div class="section-head"><h3>② 飯捲加購原料</h3><button id="addRollMaterial" type="button" class="primary">＋ 新增飯捲原料</button></div><div id="rollMaterialList"></div></section><section class="panel"><div class="section-head"><h3>③ 販售商品</h3><div class="buttons"><button id="addRollProduct" type="button" class="secondary">＋ 新增飯卷口味</button><button id="addProduct" class="primary">＋ 新增商品</button></div></div><div id="productAdminList"></div></section><section class="panel"><div class="section-head"><h3>④ 第二樣商品優惠</h3></div><form id="promoForm"><div class="grid"><div class="field"><label>第一樣商品 A</label><select id="promoA" required></select></div><div class="field"><label>第二樣商品 B</label><select id="promoB" required></select></div><div class="field"><label>B 的加購價（元）</label><input id="promoPrice" type="number" min="0" step="1" required></div><div class="field"><label>優惠名稱</label><input id="promoName" maxlength="50" required></div></div><button class="primary">儲存優惠</button></form><div id="promoList"></div><div class="roll-pair-promo-box"><h4>飯捲｜依口味分組的兩份優惠</h4><p class="muted">照價目表分兩組：原味兩份為一組，其他指定口味可自由搭配兩份。兩組優惠金額分開設定；不同組不能湊成優惠，單份照原價，加購配料另外計價。</p><form id="rollPairPromoForm">
+<div class="roll-pair-group"><h5>① 原味飯捲 × 2｜合計優惠價</h5><div class="field"><label for="rollPairOriginalProduct">原味商品（只配同一商品兩份）</label><select id="rollPairOriginalProduct"><option value="">請先新增原味飯捲商品</option></select></div><div class="field"><label for="rollPairOriginalPrice">兩份合計金額（NT$，自行設定）</label><input id="rollPairOriginalPrice" type="number" min="1" max="10000000" step="1" inputmode="numeric" placeholder="請輸入優惠價"></div><label class="roll-pair-enable" for="rollPairOriginalEnabled"><input id="rollPairOriginalEnabled" type="checkbox" checked> 啟用原味兩份優惠</label></div>
+<div class="roll-pair-group"><h5>② 其他口味任選 2 份｜合計優惠價</h5><p class="muted">勾選適用的口味，例如火腿、肉鬆、起司、泡菜燒肉；相同口味也能買兩份。</p><div id="rollPairFlavoredChoices" class="roll-pair-choices" role="group" aria-label="其他口味優惠適用商品"></div><div class="field"><label for="rollPairFlavoredPrice">兩份合計金額（NT$，自行設定）</label><input id="rollPairFlavoredPrice" type="number" min="1" max="10000000" step="1" inputmode="numeric" placeholder="請輸入優惠價"></div><label class="roll-pair-enable" for="rollPairFlavoredEnabled"><input id="rollPairFlavoredEnabled" type="checkbox" checked> 啟用其他口味任選兩份優惠</label></div>
+<button class="primary" type="submit">儲存兩組飯捲優惠</button></form><p class="muted" id="rollPairPromoStatus" role="status">尚未設定分組優惠，請由管理員選取商品並分別設定價格</p></div></section><section class="panel"><h3>攤位設定</h3><div class="grid"><div class="field"><label>攤位名稱</label><input id="stallName" maxlength="45"></div><div class="field"><label>其他支出（元）</label><input id="sharedCost" type="number" min="0" step="1"></div></div><button id="saveSettings" class="primary">儲存</button></section><section id="accountsPanel" class="panel hidden"><h3>帳號管理</h3><form id="createAccountForm"><div class="grid"><div class="field"><label>座號</label><input id="newSeat" inputmode="numeric" maxlength="2" required></div><div class="field"><label>密碼（至少 6 碼）</label><input id="newPassword" type="password" minlength="6" required></div><div class="field"><label>權限</label><select id="newRole"><option value="student">學生</option><option value="teacher">老師</option><option value="admin">管理員</option></select></div><div class="field"><label>姓名（選填）</label><input id="newName" maxlength="30"></div></div><button class="primary">新增帳號</button></form><div id="accountsList"></div></section></div>
 <div id="settingsTab" class="hidden"><div class="settings-head"><h3>⚙ 個人設定</h3><p class="muted">設定會儲存在本裝置與此帳號，不影響其他同學。</p></div><div class="settings-card"><h3>收銀顯示與操作</h3><div class="checkout-settings-grid"><div class="checkout-setting"><div><label for="settingBig">收銀大按鈕模式</label><p>放大商品、加減與結帳按鈕</p></div><input type="checkbox" role="switch" id="settingBig"></div><div class="checkout-setting"><div><label for="settingCompact">緊湊商品排列</label><p>讓同一畫面顯示更多商品</p></div><input type="checkbox" role="switch" id="settingCompact"></div><div class="checkout-setting"><div><label for="settingSound">收銀操作音效</label><p>加入商品、操作失敗、結帳成功</p></div><input type="checkbox" role="switch" id="settingSound"></div><div class="checkout-setting"><div><label for="settingDark">深色模式</label><p>此帳號在這台裝置獨立記錄</p></div><input type="checkbox" role="switch" id="settingDark"></div></div></div><div class="settings-card"><h3>帳號資訊</h3><p id="settingsIdentity" class="muted">請先登入。</p></div></div>
 <!-- 【功能區 HTML-13】唯讀展示畫面與購物車固定底部工具列 -->
 </div></section><section id="displayPage" class="display-screen hidden" aria-label="唯讀展示畫面"><div class="display-head"><div><h2 id="displayStall">高一丁｜校慶即時展示</h2><p class="muted" id="displaySync">即時銷售與商品庫存</p></div><button type="button" id="exitDisplay" class="secondary">返回收銀畫面</button></div><div class="display-stats"><div class="display-stat"><span>目前營業額</span><strong id="displayRevenue">NT$0</strong></div><div class="display-stat"><span>冰淇淋已售</span><strong id="displayIce">0 份</strong></div><div class="display-stat"><span>飯捲已售</span><strong id="displayRoll">0 份</strong></div></div><div class="display-section"><h3>商品剩餘數量</h3><div class="display-products" id="displayInventory"></div></div><p class="muted">僅顯示營業統計，須登入才能查看；展示畫面不提供資料修改功能。</p></section><footer>高一丁 V2 · 校慶結帳</footer></main>
@@ -1235,7 +1244,7 @@ function rawOrder(lines=state.cart,products=state.products,promos=state.promos,i
  }
  let discount=0;const consumed=new Map(),pairsUsed=new Map(),promoReserved=new Map();
  for(const promo of [...promos].filter(p=>p.enabled).sort((a,b)=>String(a.id).localeCompare(String(b.id)))){
-  if(promo.type==='rollPair'||promo.productA===promo.productB)continue;
+  if(promo.type==='rollPair'||promo.type==='rollPairGroups'||promo.productA===promo.productB)continue;
   const a=totals.filter(l=>l.productId===promo.productA),b=totals.filter(l=>l.productId===promo.productB);
   if(!a.length||!b.length)continue;
   const possibleA=a.reduce((n,l)=>n+l.qty,0)-(pairsUsed.get(promo.productA)||0);
@@ -1251,12 +1260,18 @@ function rawOrder(lines=state.cart,products=state.products,promos=state.promos,i
   discount+=matched*unitDiscount;
   pairsUsed.set(promo.productA,(pairsUsed.get(promo.productA)||0)+matched);pairsUsed.set(promo.productB,(pairsUsed.get(promo.productB)||0)+matched);
  }
- // 任選兩份飯捲（含同口味）使用同一個固定設定；已參與 A+B 優惠的數量不重複折抵。
- const rollPair=promos.find(p=>p.id==='roll_pair'&&p.type==='rollPair'&&p.enabled===true);
+ // 兩組獨立的飯捲優惠：原味只能配原味；指定其他口味可以任選兩份（同口味亦可）。
+ // 未設定分組優惠前，舊版不限口味的 rollPair 設定不再套用，避免跨組錯誤折價。
+ const rollPair=promos.find(p=>p.id==='roll_pair'&&p.type==='rollPairGroups');
  if(rollPair){
-  const bundlePrice=Number(rollPair.price);
-  if(Number.isSafeInteger(bundlePrice)&&bundlePrice>=1&&bundlePrice<=10000000){
-   const available=totals.filter(l=>!isOtherLine(l)&&isRoll(l.product))
+  const groups=[
+   {enabled:rollPair.originalEnabled,ids:[rollPair.originalProductId],price:Number(rollPair.originalPrice)},
+   {enabled:rollPair.flavoredEnabled,ids:Array.isArray(rollPair.flavoredProductIds)?rollPair.flavoredProductIds:[],price:Number(rollPair.flavoredPrice)}
+  ];
+  for(const group of groups){
+   if(!group.enabled||!Number.isSafeInteger(group.price)||group.price<1||group.price>10000000)continue;
+   const eligible=new Set(group.ids.filter(id=>typeof id==='string'&&id));
+   const available=totals.filter(l=>!isOtherLine(l)&&isRoll(l.product)&&eligible.has(l.productId))
     .map(l=>({line:l,price:l.product.price,left:Math.max(0,l.qty-(promoReserved.get(l.key)||0))}))
     .filter(x=>x.left>0)
     .sort((a,b)=>b.price-a.price||String(a.line.key).localeCompare(String(b.line.key)));
@@ -1264,11 +1279,13 @@ function rawOrder(lines=state.cart,products=state.products,promos=state.promos,i
    const take=()=>{while(cursor<available.length&&available[cursor].left===0)cursor++;if(cursor>=available.length)return null;available[cursor].left--;return available[cursor];};
    while(true){
     const first=take();if(!first)break;const second=take();if(!second)break;
-    const saving=first.price+second.price-bundlePrice;
-    if(saving<=0)break; // 價格由高到低，後續配對不會有折扣。
+    const saving=first.price+second.price-group.price;
+    if(saving<=0)break; // 優惠只減不加；後續配對的原價只會更低。
     const secondCut=Math.min(saving,second.price),firstCut=saving-secondCut;
     first.line.discount+=firstCut;first.line.lineTotal-=firstCut;
     second.line.discount+=secondCut;second.line.lineTotal-=secondCut;
+    promoReserved.set(first.line.key,(promoReserved.get(first.line.key)||0)+1);
+    promoReserved.set(second.line.key,(promoReserved.get(second.line.key)||0)+1);
     discount+=saving;
    }
   }
@@ -1600,10 +1617,29 @@ async function saveRollMaterial(e){
  try{await logged('roll.ingredient.save',name,ref.id)}catch(err){toast('原料已儲存，但日誌未寫入：'+err.message,true)}
  }catch(err){toast('儲存飯捲原料失敗：'+err.message,true)}finally{state.busy=false}
 }
-function renderAdmin(){renderIngredients();renderRollMaterials();$('productAdminList').innerHTML=state.products.map(p=>'<div class="row listrow"><div><b>'+esc(p.name)+'</b> · '+esc(p.category)+'<div class="hint">'+money(p.price)+' / '+esc(p.unit)+' · 已售 '+(p.sold||0)+'</div></div><button class="secondary" data-edit-product="'+esc(p.id)+'">編輯</button></div>').join('')||'<div class="empty">尚無商品</div>';const options=state.products.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');const a=$('promoA').value,b=$('promoB').value;$('promoA').innerHTML=options;$('promoB').innerHTML=options;if(state.products.some(p=>p.id===a))$('promoA').value=a;if(state.products.some(p=>p.id===b))$('promoB').value=b;$('promoList').innerHTML=state.promos.filter(p=>p.type!=='rollPair').map(p=>'<div class="listrow">'+esc(state.products.find(x=>x.id===p.productA)?.name||'商品 A')+' + '+esc(state.products.find(x=>x.id===p.productB)?.name||'商品 B')+'：B 加購 '+money(p.price??p.value)+'</div>').join('');const pairPromo=state.promos.find(p=>p.id==='roll_pair'&&p.type==='rollPair');
-if(document.activeElement!==$('rollPairPrice'))$('rollPairPrice').value=pairPromo?String(pairPromo.price):'';
-if(document.activeElement!==$('rollPairEnabled'))$('rollPairEnabled').checked=pairPromo?pairPromo.enabled===true:true;
-$('rollPairPromoStatus').textContent=pairPromo?('目前：任選兩份 '+money(pairPromo.price)+'（'+(pairPromo.enabled?'啟用':'停用')+'）'):'尚未設定兩份優惠';
+function renderRollPairPromoAdmin(){
+ const p=state.promos.find(p=>p.id==='roll_pair'&&p.type==='rollPairGroups');
+ const old=state.promos.find(p=>p.id==='roll_pair'&&p.type==='rollPair');
+ const rolls=state.products.filter(p=>isRoll(p)&&!p.hidden);
+ const name=id=>state.products.find(p=>p.id===id)?.name||'已停用／已刪除商品';
+ const status=$('rollPairPromoStatus');
+ status.textContent=p?('原味兩份 '+(p.originalEnabled?money(p.originalPrice):'停用')+'（'+name(p.originalProductId)+'）；其他口味兩份 '+(p.flavoredEnabled?money(p.flavoredPrice):'停用')+'（'+(p.flavoredProductIds||[]).map(name).join('、')+'）'):(old?'發現舊版「全部飯捲任選」優惠；新版不會自動套用。請重新設定兩組價格並儲存。':'尚未設定分組優惠，請選取適用口味並設定兩種價格。');
+ // 避免其他 4 位收銀員同步時，重繪管理頁將管理員尚未儲存的選擇洗掉。
+ if(state.rollPairDirty)return;
+ const originalDefault=rolls.find(x=>/原味/.test(x.name))?.id||'';
+ const original=p?.originalProductId||originalDefault;
+ const origSelect=$('rollPairOriginalProduct');
+ origSelect.innerHTML='<option value="">請選擇原味商品</option>'+rolls.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join('');
+ origSelect.value=rolls.some(x=>x.id===original)?original:'';
+ const defaultFlavored=rolls.filter(x=>x.id!==original&&/(火腿|肉鬆|起司|泡菜|燒肉)/.test(x.name)).map(x=>x.id);
+ const chosen=new Set(p?p.flavoredProductIds||[]:defaultFlavored);
+ $('rollPairFlavoredChoices').innerHTML=rolls.filter(x=>x.id!==origSelect.value).map(x=>'<label class="roll-pair-choice"><input type="checkbox" value="'+esc(x.id)+'" '+(chosen.has(x.id)?'checked':'')+'><span>'+esc(x.name)+'</span></label>').join('')||'<p class="muted">目前沒有其他可用飯捲商品</p>';
+ $('rollPairOriginalPrice').value=p?String(p.originalPrice):'';
+ $('rollPairFlavoredPrice').value=p?String(p.flavoredPrice):'';
+ $('rollPairOriginalEnabled').checked=p?p.originalEnabled===true:true;
+ $('rollPairFlavoredEnabled').checked=p?p.flavoredEnabled===true:true;
+}
+function renderAdmin(){renderIngredients();renderRollMaterials();$('productAdminList').innerHTML=state.products.map(p=>'<div class="row listrow"><div><b>'+esc(p.name)+'</b> · '+esc(p.category)+'<div class="hint">'+money(p.price)+' / '+esc(p.unit)+' · 已售 '+(p.sold||0)+'</div></div><button class="secondary" data-edit-product="'+esc(p.id)+'">編輯</button></div>').join('')||'<div class="empty">尚無商品</div>';const options=state.products.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');const a=$('promoA').value,b=$('promoB').value;$('promoA').innerHTML=options;$('promoB').innerHTML=options;if(state.products.some(p=>p.id===a))$('promoA').value=a;if(state.products.some(p=>p.id===b))$('promoB').value=b;$('promoList').innerHTML=state.promos.filter(p=>p.type!=='rollPair'&&p.type!=='rollPairGroups').map(p=>'<div class="listrow">'+esc(state.products.find(x=>x.id===p.productA)?.name||'商品 A')+' + '+esc(state.products.find(x=>x.id===p.productB)?.name||'商品 B')+'：B 加購 '+money(p.price??p.value)+'</div>').join('');renderRollPairPromoAdmin();
 $('accountsList').innerHTML=state.accounts.map(a=>'<div class="row listrow"><span>'+a.seat+' 號 · '+esc(a.name||'')+'</span><select data-role-uid="'+esc(a.id)+'"><option value="student" '+(a.role==='student'?'selected':'')+'>學生</option><option value="teacher" '+(a.role==='teacher'?'selected':'')+'>老師</option><option value="admin" '+(a.role==='admin'?'selected':'')+'>管理員</option></select></div>').join('')}
 function renderCartBar(){let c;try{c=summary()}catch(e){c={total:0}}const count=state.cart.reduce((n,l)=>n+l.qty,0);$('cartCount').textContent=count+' 份';$('cartTotal').textContent=money(c.total);$('cartRedCount').textContent=count>99?'99+':String(count);$('mobileCartBadge').textContent=count>99?'99+':String(count);$('mobileCartBadge').classList.toggle('hidden',!count);$('cartBar').classList.toggle('hidden',!state.cart.length||state.tab!=='checkout')}
 function render(){renderStats();renderProducts();renderInventory();renderDamage();renderSales();renderPendingOrders();renderCashCounts();renderHeldOrders();if(isManager()){renderAudit();renderAdmin();renderAlerts();renderMovements()}renderCartBar();renderDisplay()}
@@ -2315,13 +2351,26 @@ async function savePromo(e){
 async function saveRollPairPromo(e){
  e.preventDefault();if(state.busy||!isManager())return;
  try{
-  const price=int($('rollPairPrice').value,'兩份飯捲合計優惠價',1,10000000),enabled=$('rollPairEnabled').checked;
+  const originalProductId=$('rollPairOriginalProduct').value;
+  const flavoredProductIds=[...$('rollPairFlavoredChoices').querySelectorAll('input[type="checkbox"]:checked')].map(el=>el.value);
+  const originalEnabled=$('rollPairOriginalEnabled').checked,flavoredEnabled=$('rollPairFlavoredEnabled').checked;
+  const originalRaw=$('rollPairOriginalPrice').value,flavoredRaw=$('rollPairFlavoredPrice').value;
+  const originalPrice=originalEnabled?int(originalRaw,'原味兩份優惠價',1,10000000):(originalRaw?int(originalRaw,'原味兩份優惠價',1,10000000):1);
+  const flavoredPrice=flavoredEnabled?int(flavoredRaw,'其他口味兩份優惠價',1,10000000):(flavoredRaw?int(flavoredRaw,'其他口味兩份優惠價',1,10000000):1);
+  const rollIds=new Set(state.products.filter(p=>isRoll(p)&&!p.hidden).map(p=>p.id));
+  if(originalEnabled&&(!originalProductId||!rollIds.has(originalProductId)))throw Error('請先選取有效的原味飯捲商品');
+  if(flavoredEnabled&&!flavoredProductIds.length)throw Error('請至少勾選一種適用其他口味優惠的飯捲');
+  if(flavoredProductIds.some(id=>!rollIds.has(id)||id===originalProductId)||new Set(flavoredProductIds).size!==flavoredProductIds.length)throw Error('其他口味清單不能包含原味商品或重複品項');
   state.busy=true;
-  await setDoc(doc(db,'promotions','roll_pair'),{type:'rollPair',name:'飯捲任選兩份',price,enabled,updatedAt:serverTimestamp()});
-  toast(enabled?'飯捲兩份優惠已儲存':'飯捲兩份優惠已停用');
-  try{await logged('promo.rollPair.save','飯捲任選兩份 '+money(price)+(enabled?'（啟用）':'（停用）'),'roll_pair')}
-  catch(err){toast('優惠已儲存，但日誌未寫入：'+err.message,true)}
- }catch(err){toast('儲存飯捲兩份優惠失敗：'+err.message,true)}finally{state.busy=false}
+  await setDoc(doc(db,'promotions','roll_pair'),{
+   type:'rollPairGroups',name:'飯捲分組兩份優惠',originalProductId,originalPrice,originalEnabled,
+   flavoredProductIds,flavoredPrice,flavoredEnabled,updatedAt:serverTimestamp()
+  });
+  state.rollPairDirty=false;
+  toast('飯捲兩組優惠已儲存');
+  try{await logged('promo.rollPair.save','原味兩份 '+(originalEnabled?money(originalPrice):'停用')+'；其他口味兩份 '+(flavoredEnabled?money(flavoredPrice):'停用'),'roll_pair')}
+  catch(err){toast('優惠已儲存，但操作日誌未寫入：'+err.message,true)}
+ }catch(err){toast('儲存飯捲優惠失敗：'+err.message,true)}finally{state.busy=false}
 }
 async function createAccount(e){
  e.preventDefault();if(!isSuper()||state.busy)return;
@@ -2565,7 +2614,16 @@ $('productImageUrl').oninput=updateProductImagePreview;
 $('productGrid').onclick=e=>{const plus=e.target.closest('[data-card-plus]'),minus=e.target.closest('[data-card-minus]'),ice=e.target.closest('[data-open-ice]'),tap=e.target.closest('[data-tap]');if(minus)adjustCard(minus.dataset.cardMinus,-1);else if(plus)adjustCard(plus.dataset.cardPlus,1);else if(ice)openIce(ice.dataset.openIce);else if(tap)adjustCard(tap.dataset.tap,1)};$('iceQty').oninput=updateIcePrice;for(const [id,delta] of [['iceQtyMinus',-1],['iceQtyPlus',1]])$(id).onclick=()=>{const el=$('iceQty');const n=Number(el.value);el.value=String(Math.max(1,Math.min(10000,(Number.isSafeInteger(n)?n:1)+delta)));updateIcePrice()};$('iceFlavors').oninput=updateIcePrice;$('iceFlavors').onclick=e=>{const b=e.target.closest('[data-ice-plus],[data-ice-minus]');if(!b)return;const id=b.dataset.icePlus||b.dataset.iceMinus;const el=[...document.querySelectorAll('.ice-ball')].find(x=>x.dataset.flavor===id);if(!el)return;const delta=b.hasAttribute('data-ice-plus')?1:-1;el.value=Math.max(0,Math.min(10000,(Number(el.value)||0)+delta));updateIcePrice()};$('addIceToCart').onclick=()=>{try{saveCustomizedItem()}catch(e){toast(e.message,true)}};
 $('productGrid').addEventListener('click',e=>{if(e.target.closest('#openOther')){$('otherDialog').showModal();}});$('otherForm').onsubmit=addOther;
 $('openCart').onclick=()=>{renderCart();if(state.pendingVerification){toast('請先查核上一筆交易',true);return;}$('cartDialog').showModal()};$('cartLines').onclick=e=>{const plus=e.target.closest('[data-cart-plus]'),minus=e.target.closest('[data-cart-minus]'),edit=e.target.closest('[data-cart-edit]'),b=e.target.closest('[data-remove-cart]');if(edit){const target=state.cart.find(l=>l.key===edit.dataset.cartEdit);if(target&&!isOtherLine(target)){state.customizeReturnCart=true;$('cartDialog').close();openIce(target.productId,target.key)}return;}if(plus)changeCartQty(plus.dataset.cartPlus,1);else if(minus)changeCartQty(minus.dataset.cartMinus,-1);else if(b){state.cart=state.cart.filter(l=>l.key!==b.dataset.removeCart);state.pendingOrderId=null;render();renderCart()}};$('toConfirm').onclick=showConfirm;$('backCart').onclick=()=>{$('confirmDialog').close();renderCart();$('cartDialog').showModal()};$('exactPaidBtn').onclick=()=>{try{$('paid').value=manualQuote().total;updateChange()}catch(e){toast(e.message,true)}};$('paid').oninput=updateChange;$('manualDiscount').oninput=updateChange;$('manualReason').oninput=updateChange;$('confirmCheckout').onclick=checkout;$('pendingCheck').onclick=checkStoredReceipt;$('verifyAgainBtn').onclick=checkStoredReceipt;
-$('openDamage').onclick=openDamage;$('damageForm').onsubmit=saveDamage;$('damageIngredient').onchange=updateDamageEstimate;$('damageQty').oninput=updateDamageEstimate;$('damageReason').onchange=()=>{$('damageReasonOtherBox').classList.toggle('hidden',$('damageReason').value!=='其他')};$('addIngredient').onclick=()=>openIngredient();$('ingredientForm').onsubmit=saveIngredient;$('ingredientList').onclick=e=>{const del=e.target.closest('[data-delete-ingredient]');if(del){deleteMistakenMaterial('ingredient',del.dataset.deleteIngredient);return;}const b=e.target.closest('[data-edit-ingredient]');if(b)openIngredient(b.dataset.editIngredient)};$('addRollMaterial').onclick=()=>openRollMaterial();$('rollMaterialForm').onsubmit=saveRollMaterial;$('rollMaterialList').onclick=e=>{const del=e.target.closest('[data-delete-roll-material]');if(del){deleteMistakenMaterial('roll',del.dataset.deleteRollMaterial);return;}const b=e.target.closest('[data-edit-roll-material]');if(b)openRollMaterial(b.dataset.editRollMaterial)};$('addProduct').onclick=()=>openProduct();$('addRollProduct').onclick=()=>openProduct(null,'飯捲');$('addRollAddon').onclick=()=>rollAddonRow();$('rollAddonRows').onclick=e=>{const b=e.target.closest('[data-remove-row]');if(b)b.closest('.addon-row').remove()};$('rollInventoryGrid').onclick=e=>{const b=e.target.closest('[data-stock-roll]');if(b)openRollStock(b.dataset.stockRoll)};$('saveStock').onclick=saveRollStock;$('productAdminList').onclick=e=>{const b=e.target.closest('[data-edit-product]');if(b)openProduct(b.dataset.editProduct)};$('productType').onchange=updateType;$('addRecipe').onclick=()=>recipeRow();$('addAddonOption').onclick=()=>addonRow();$('recipeRows').onclick=$('addonOptionRows').onclick=e=>{if(e.target.closest('[data-remove-row]'))e.target.closest('.addon-row').remove()};$('productForm').onsubmit=saveProduct;$('saveSettings').onclick=saveSettings;$('promoForm').onsubmit=savePromo;$('rollPairPromoForm').onsubmit=saveRollPairPromo;$('createAccountForm').onsubmit=createAccount;
+$('openDamage').onclick=openDamage;$('damageForm').onsubmit=saveDamage;$('damageIngredient').onchange=updateDamageEstimate;$('damageQty').oninput=updateDamageEstimate;$('damageReason').onchange=()=>{$('damageReasonOtherBox').classList.toggle('hidden',$('damageReason').value!=='其他')};$('addIngredient').onclick=()=>openIngredient();$('ingredientForm').onsubmit=saveIngredient;$('ingredientList').onclick=e=>{const del=e.target.closest('[data-delete-ingredient]');if(del){deleteMistakenMaterial('ingredient',del.dataset.deleteIngredient);return;}const b=e.target.closest('[data-edit-ingredient]');if(b)openIngredient(b.dataset.editIngredient)};$('addRollMaterial').onclick=()=>openRollMaterial();$('rollMaterialForm').onsubmit=saveRollMaterial;$('rollMaterialList').onclick=e=>{const del=e.target.closest('[data-delete-roll-material]');if(del){deleteMistakenMaterial('roll',del.dataset.deleteRollMaterial);return;}const b=e.target.closest('[data-edit-roll-material]');if(b)openRollMaterial(b.dataset.editRollMaterial)};$('addProduct').onclick=()=>openProduct();$('addRollProduct').onclick=()=>openProduct(null,'飯捲');$('addRollAddon').onclick=()=>rollAddonRow();$('rollAddonRows').onclick=e=>{const b=e.target.closest('[data-remove-row]');if(b)b.closest('.addon-row').remove()};$('rollInventoryGrid').onclick=e=>{const b=e.target.closest('[data-stock-roll]');if(b)openRollStock(b.dataset.stockRoll)};$('saveStock').onclick=saveRollStock;$('productAdminList').onclick=e=>{const b=e.target.closest('[data-edit-product]');if(b)openProduct(b.dataset.editProduct)};$('productType').onchange=updateType;$('addRecipe').onclick=()=>recipeRow();$('addAddonOption').onclick=()=>addonRow();$('recipeRows').onclick=$('addonOptionRows').onclick=e=>{if(e.target.closest('[data-remove-row]'))e.target.closest('.addon-row').remove()};$('productForm').onsubmit=saveProduct;$('saveSettings').onclick=saveSettings;$('promoForm').onsubmit=savePromo;$('rollPairPromoForm').onsubmit=saveRollPairPromo;
+$('rollPairPromoForm').addEventListener('input',()=>{state.rollPairDirty=true});
+$('rollPairPromoForm').addEventListener('change',e=>{
+ state.rollPairDirty=true;
+ if(e.target.id==='rollPairOriginalProduct'){
+  const current=e.target.value,other=$('rollPairFlavoredChoices');
+  const checked=new Set([...other.querySelectorAll('input[type="checkbox"]:checked')].map(el=>el.value));
+  other.innerHTML=state.products.filter(p=>isRoll(p)&&!p.hidden&&p.id!==current).map(p=>'<label class="roll-pair-choice"><input type="checkbox" value="'+esc(p.id)+'" '+(checked.has(p.id)?'checked':'')+'><span>'+esc(p.name)+'</span></label>').join('')||'<p class="muted">目前沒有其他可用飯捲商品</p>';
+ }
+});$('createAccountForm').onsubmit=createAccount;
 $('accountsList').onchange=e=>{const x=e.target.closest('[data-role-uid]');if(x)setAccountRole(x.dataset.roleUid,x.value)};$('salesList').onclick=e=>{const a=e.target.closest('[data-refund]'),b=e.target.closest('[data-remove-sale]');if(e.target.closest('[data-review-refund]'))verifyUnconfirmedRefund();else if(a)openRefund(a.dataset.refund);else if(e.target.closest('[data-receipt]')){const s=state.sales.find(x=>x.id===e.target.closest('[data-receipt]').dataset.receipt);if(s)renderReceipt(s)}else if(b)hideRecord('sales',b.dataset.removeSale)};$('auditList').onclick=e=>{const b=e.target.closest('[data-remove-audit]');if(b)hideRecord('audit',b.dataset.removeAudit)};$('confirmRefund').onclick=refund;$('exportSales').onclick=()=>downloadPdf('sales');$('exportAudit').onclick=()=>downloadPdf('audit');$('clearSales').onclick=()=>clearTesting('sales');$('clearAudit').onclick=()=>clearTesting('audit');
 $('openPersonalSettings').onclick=()=>{applyCashierPrefs();tab('settings')};
 for(const [id,key] of [['settingBig','big'],['settingCompact','compact'],['settingSound','sound'],['settingDark','dark']])$(id).onchange=e=>{
